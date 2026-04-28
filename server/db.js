@@ -218,7 +218,7 @@ function avatarFallback(name) {
 
 function serializeUserRecord(user) {
   return {
-    id: Number(user.id),
+    id: Number(user.userId || user.id),
     name: user.name,
     handle: user.handle,
     bio: user.bio,
