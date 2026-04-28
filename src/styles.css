@@ -625,6 +625,7 @@ img {
 
 .explore-page {
   gap: 18px;
+  overflow: visible;
 }
 
 .discover-chip-row {
@@ -636,6 +637,7 @@ img {
   display: flex;
   flex-direction: column;
   gap: 16px;
+  min-width: 0;
 }
 
 .creator-row,
@@ -651,6 +653,15 @@ img {
   border-radius: 24px;
   background: rgba(255, 255, 255, 0.04);
   text-align: center;
+}
+
+.creator-card-trigger {
+  display: inline-flex;
+  justify-content: center;
+  border: 0;
+  background: none;
+  padding: 0;
+  color: inherit;
 }
 
 .creator-card p {
@@ -686,6 +697,24 @@ img {
   display: flex;
   flex-direction: column;
   gap: 18px;
+}
+
+.profile-hero-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.profile-hero-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 16px;
+  color: var(--text-soft);
+  font-size: 0.92rem;
+}
+
+.profile-hero-stats span {
+  white-space: nowrap;
 }
 
 .profile-headline {
@@ -932,11 +961,15 @@ img {
 }
 
 .search-results {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
   align-items: flex-start;
 }
 
 .search-column {
   flex: 1;
+  min-width: 0;
 }
 
 .search-column h4 {
@@ -946,6 +979,10 @@ img {
 .search-user-card,
 .activity-card {
   padding: 16px;
+}
+
+.search-user-card {
+  cursor: pointer;
 }
 
 .search-user-card p,
@@ -2323,6 +2360,15 @@ img {
   .snap-camera-actions .ghost-button,
   .snap-camera-actions .primary-action {
     width: 100%;
+  }
+
+  .search-results {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .profile-hero-stats {
+    gap: 8px 12px;
+    font-size: 0.88rem;
   }
 
   .snap-compose-card,

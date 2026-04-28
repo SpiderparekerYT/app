@@ -456,7 +456,14 @@ export function getProfile(userId, viewerId) {
 
   const stats = getUserStats(userId);
   const posts = withStats(viewerId).filter((post) => post.userId === Number(userId));
-  return { user, stats, posts };
+  const following = Number(userId) === Number(viewerId)
+    ? false
+    : Boolean(
+        db
+          .prepare('SELECT 1 FROM follows WHERE followee_id = ? AND follower_id = ?')
+          .get(userId, viewerId),
+      );
+  return { user, stats, posts, following, isSelf: Number(userId) === Number(viewerId) };
 }
 
 export function toggleLike(postId, userId) {

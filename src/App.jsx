@@ -349,6 +349,8 @@ function App() {
   const [user, setUser] = useState(null);
   const [posts, setPosts] = useState([]);
   const [profile, setProfile] = useState(null);
+  const [activeProfileId, setActiveProfileId] = useState(null);
+  const [publicProfile, setPublicProfile] = useState(null);
   const [activity, setActivity] = useState([]);
   const [inbox, setInbox] = useState([]);
   const [people, setPeople] = useState([]);
@@ -601,6 +603,12 @@ function App() {
   }, []);
 
   useEffect(() => {
+    if (!activeProfileId || Number(activeProfileId) === Number(user?.id)) {
+      setPublicProfile(null);
+    }
+  }, [activeProfileId, user?.id]);
+
+  useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const nextTab = params.get('tab');
 
@@ -806,6 +814,15 @@ function App() {
     () => storyGroups.find((story) => story.isOwnStory) || null,
     [storyGroups],
   );
+  const displayedProfile = activeProfileId ? publicProfile : profile;
+  const isViewingOwnProfile = !activeProfileId || Number(activeProfileId) === Number(user?.id);
+  const displayedStoryGroup = useMemo(() => {
+    if (!displayedProfile?.user?.id) {
+      return null;
+    }
+
+    return storyGroups.find((story) => story.user.id === displayedProfile.user.id) || null;
+  }, [displayedProfile, storyGroups]);
   const homeStoryGroups = useMemo(() => {
     if (ownStoryGroup) {
       return [ownStoryGroup, ...storyGroups.filter((story) => !story.isOwnStory)];
@@ -1110,6 +1127,11 @@ function App() {
 
   function selectTab(tabKey) {
     setActiveTab(tabKey);
+
+    if (tabKey === 'Profile') {
+      setActiveProfileId(null);
+      setPublicProfile(null);
+    }
 
     if (tabKey === 'Messages') {
       setSelectedConversationId(null);
@@ -1453,6 +1475,8 @@ function App() {
     setUser(null);
     setPosts([]);
     setProfile(null);
+    setActiveProfileId(null);
+    setPublicProfile(null);
     setActivity([]);
     setInbox([]);
     setPeople([]);
@@ -1498,6 +1522,24 @@ function App() {
     const data = await apiFetch(`/api/users/${userId}/follow`, { method: 'POST' });
     updateFollowState(data.userId, data.following);
     await loadAppData(user.id);
+    if (activeProfileId && Number(activeProfileId) === Number(userId)) {
+      const refreshedProfile = await apiFetch(`/api/profile/${userId}`);
+      setPublicProfile(refreshedProfile);
+    }
+  }
+
+  async function openUserProfile(profileUserId) {
+    if (Number(profileUserId) === Number(user?.id)) {
+      setActiveProfileId(null);
+      setPublicProfile(null);
+      setActiveTab('Profile');
+      return;
+    }
+
+    const nextProfile = await apiFetch(`/api/profile/${profileUserId}`);
+    setActiveProfileId(Number(profileUserId));
+    setPublicProfile(nextProfile);
+    setActiveTab('Profile');
   }
 
   async function startConversation(userIds) {
@@ -2446,7 +2488,19 @@ function App() {
                     <h4>People</h4>
                     {searchResults.users.length === 0 && <p>No results.</p>}
                     {searchResults.users.map((entry) => (
-                      <article key={entry.id} className="search-user-card">
+                      <article
+                        key={entry.id}
+                        className="search-user-card"
+                        onClick={() => openUserProfile(entry.id)}
+                        role="button"
+                        tabIndex={0}
+                        onKeyDown={(event) => {
+                          if (event.key === 'Enter' || event.key === ' ') {
+                            event.preventDefault();
+                            void openUserProfile(entry.id);
+                          }
+                        }}
+                      >
                         <div className="post-user">
                           <Avatar user={entry} />
                           <div>
@@ -2460,17 +2514,31 @@ function App() {
                             <>
                               <button
                                 className="ghost-button"
-                                onClick={() => {
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  setSearchQuery('');
                                   setSnapRecipientId(String(entry.id));
                                   setActiveTab('Snaps');
                                 }}
                               >
                                 Snap
                               </button>
-                              <button className="follow-chip" onClick={() => toggleFollow(entry.id)}>
+                              <button
+                                className="follow-chip"
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  void toggleFollow(entry.id);
+                                }}
+                              >
                                 {entry.following ? 'Following' : 'Follow'}
                               </button>
-                              <button className="ghost-button" onClick={() => startConversation(entry.id)}>
+                              <button
+                                className="ghost-button"
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  void startConversation(entry.id);
+                                }}
+                              >
                                 Message
                               </button>
                             </>
@@ -2505,7 +2573,9 @@ function App() {
               <div className="creator-row">
                 {suggestedPeople.map((entry) => (
                   <article key={entry.id} className="creator-card">
-                    <Avatar user={entry} />
+                    <button className="creator-card-trigger" onClick={() => openUserProfile(entry.id)} type="button">
+                      <Avatar user={entry} />
+                    </button>
                     <strong>{entry.name}</strong>
                     <p>@{entry.handle}</p>
                     <button className="follow-chip" onClick={() => toggleFollow(entry.id)}>
@@ -3087,81 +3157,102 @@ function App() {
           </section>
         )}
 
-        {activeTab === 'Profile' && profile && (
+        {activeTab === 'Profile' && displayedProfile && (
           <section className="profile-layout profile-page">
             <div className="profile-hero-card">
               <div className="profile-hero">
-                <Avatar user={profile.user} size="xl" />
-                <div>
-                  <p className="eyebrow">Profile</p>
-                  <h3>{profile.user.name}</h3>
-                  <p>@{profile.user.handle}</p>
-                  <p>{profile.user.bio}</p>
+                <Avatar user={displayedProfile.user} size="xl" />
+                <div className="profile-hero-copy">
+                  <p className="eyebrow">{isViewingOwnProfile ? 'Profile' : 'Creator'}</p>
+                  <h3>{displayedProfile.user.name}</h3>
+                  <p>@{displayedProfile.user.handle}</p>
+                  <div className="profile-hero-stats">
+                    <span>Following {formatCount(displayedProfile.stats.following)}</span>
+                    <span>Followers {formatCount(displayedProfile.stats.followers)}</span>
+                    <span>Posts {formatCount(displayedProfile.stats.posts)}</span>
+                  </div>
+                  <p>{displayedProfile.user.bio}</p>
                 </div>
               </div>
 
               <div className="profile-action-row">
-                <button className="primary-action" onClick={() => setComposerOpen(true)}>
-                  Create post
-                </button>
-                <button className="ghost-button" onClick={() => setStoryComposerOpen(true)}>
-                  Add story
-                </button>
-                <button className="ghost-button" onClick={() => setProfileEditorOpen(true)}>
-                  Edit profile
-                </button>
-                <button className="ghost-button" onClick={shareProfile}>
-                  Share
-                </button>
-                <button className="ghost-button" onClick={logout}>
-                  Log out
-                </button>
+                {isViewingOwnProfile ? (
+                  <>
+                    <button className="primary-action" onClick={() => setComposerOpen(true)}>
+                      Create post
+                    </button>
+                    <button className="ghost-button" onClick={() => setStoryComposerOpen(true)}>
+                      Add story
+                    </button>
+                    <button className="ghost-button" onClick={() => setProfileEditorOpen(true)}>
+                      Edit profile
+                    </button>
+                    <button className="ghost-button" onClick={shareProfile}>
+                      Share
+                    </button>
+                    <button className="ghost-button" onClick={logout}>
+                      Log out
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <button className="primary-action" onClick={() => toggleFollow(displayedProfile.user.id)}>
+                      {displayedProfile.following ? 'Following' : 'Follow'}
+                    </button>
+                    <button className="ghost-button" onClick={() => startConversation(displayedProfile.user.id)}>
+                      Message
+                    </button>
+                    <button className="ghost-button" onClick={() => setActiveTab('Explore')}>
+                      Back
+                    </button>
+                  </>
+                )}
               </div>
             </div>
 
             <div className="profile-headline">
               <div>
-                <p className="eyebrow">Profile</p>
-                <h3>{profile.user.name}</h3>
+                <p className="eyebrow">{isViewingOwnProfile ? 'Profile' : 'Public profile'}</p>
+                <h3>{displayedProfile.user.name}</h3>
               </div>
               <div className="profile-inline-meta">
-                <span>{profile.stats.posts} posts</span>
-                <span>{formatCount(profile.stats.followers)} followers</span>
-                <span>{formatCount(profile.stats.following)} following</span>
+                <span>{displayedProfile.stats.posts} posts</span>
+                <span>{formatCount(displayedProfile.stats.followers)} followers</span>
+                <span>{formatCount(displayedProfile.stats.following)} following</span>
               </div>
             </div>
 
             <div className="profile-stats">
               <article>
-                <strong>{profile.stats.posts}</strong>
+                <strong>{displayedProfile.stats.posts}</strong>
                 <span>Posts</span>
               </article>
               <article>
-                <strong>{formatCount(profile.stats.followers)}</strong>
+                <strong>{formatCount(displayedProfile.stats.followers)}</strong>
                 <span>Followers</span>
               </article>
               <article>
-                <strong>{formatCount(profile.stats.following)}</strong>
+                <strong>{formatCount(displayedProfile.stats.following)}</strong>
                 <span>Following</span>
               </article>
               <article>
-                <strong>{formatCount(profile.stats.totalLikes)}</strong>
+                <strong>{formatCount(displayedProfile.stats.totalLikes)}</strong>
                 <span>Total likes</span>
               </article>
             </div>
 
-            {ownStoryGroup && (
+            {displayedStoryGroup && (
               <section className="profile-highlights">
                 <div className="section-heading">
-                  <h3>Highlights</h3>
-                  <span>{ownStoryGroup.items.length}</span>
+                  <h3>Current stories</h3>
+                  <span>{displayedStoryGroup.items.length}</span>
                 </div>
                 <div className="highlight-row">
-                  {ownStoryGroup.items.slice(0, 6).map((story) => (
+                  {displayedStoryGroup.items.slice(0, 6).map((story) => (
                     <button
                       key={story.id}
                       className="highlight-card"
-                      onClick={() => openStoryGroup(ownStoryGroup)}
+                      onClick={() => openStoryGroup(displayedStoryGroup)}
                     >
                       <div className="highlight-ring">
                         <img alt={story.caption || 'Story'} src={resolveAssetUrl(story.imageUrl)} />
@@ -3173,26 +3264,28 @@ function App() {
               </section>
             )}
 
-            <section className="insight-card compact">
-              <div className="section-heading">
-                <h3>Notifications</h3>
-                <span>{pushPermission}</span>
-              </div>
-              <div className="post-owner-actions">
-                <button className="ghost-button" onClick={enablePushNotifications}>
-                  Enable
-                </button>
-                {pushToken && <button className="ghost-button">Ready</button>}
-              </div>
-            </section>
+            {isViewingOwnProfile && (
+              <section className="insight-card compact">
+                <div className="section-heading">
+                  <h3>Notifications</h3>
+                  <span>{pushPermission}</span>
+                </div>
+                <div className="post-owner-actions">
+                  <button className="ghost-button" onClick={enablePushNotifications}>
+                    Enable
+                  </button>
+                  {pushToken && <button className="ghost-button">Ready</button>}
+                </div>
+              </section>
+            )}
 
             <div className="mini-gallery">
-              {profile.posts.length === 0 && (
+              {displayedProfile.posts.length === 0 && (
                 <section className="empty-state compact-empty">
                   <h3>No posts yet</h3>
                 </section>
               )}
-              {profile.posts.map((post) => (
+              {displayedProfile.posts.map((post) => (
                 <article key={post.id} className="mini-tile">
                   <img alt={post.caption} src={resolveAssetUrl(post.imageUrl)} />
                   <span>{post.location}</span>

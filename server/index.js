@@ -860,6 +860,8 @@ app.get('/api/profile/:id', requireAuth, (req, res) => {
 
   return res.json({
     user: serializeUser(profile.user),
+    following: Boolean(profile.following),
+    isSelf: Boolean(profile.isSelf),
     stats: {
       posts: Number(profile.stats.posts),
       followers: Number(profile.stats.followers),
