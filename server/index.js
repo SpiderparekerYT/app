@@ -306,8 +306,13 @@ function normalizeMessage(message) {
   };
 }
 
+function getSessionIdFromRequest(req) {
+  const headerValue = req.get('x-prism-session')?.trim();
+  return headerValue || req.cookies.snapdesk_session || '';
+}
+
 function requireAuth(req, res, next) {
-  const sessionId = req.cookies.snapdesk_session;
+  const sessionId = getSessionIdFromRequest(req);
   const user = sessionId ? getUserBySession(sessionId) : null;
 
   if (!user) {
@@ -327,6 +332,7 @@ function sendSession(res, user) {
     secure: secureCookies,
     maxAge: 1000 * 60 * 60 * 24 * 7,
   });
+  return sessionId;
 }
 
 app.get('/api/health', (_req, res) => {
@@ -453,7 +459,7 @@ app.get('/api/spotify/search', requireAuth, async (req, res) => {
 });
 
 app.get('/api/auth/me', (req, res) => {
-  const sessionId = req.cookies.snapdesk_session;
+  const sessionId = getSessionIdFromRequest(req);
   const user = sessionId ? getUserBySession(sessionId) : null;
 
   if (!user) {
@@ -479,8 +485,8 @@ app.post('/api/auth/register', async (req, res) => {
 
   const passwordHash = await bcrypt.hash(password, 10);
   const user = createUser({ name, handle, bio, passwordHash });
-  sendSession(res, user);
-  return res.status(201).json({ user: serializeUser(user) });
+  const sessionToken = sendSession(res, user);
+  return res.status(201).json({ user: serializeUser(user), sessionToken });
 });
 
 app.post('/api/auth/login', async (req, res) => {
@@ -492,12 +498,12 @@ app.post('/api/auth/login', async (req, res) => {
     return res.status(401).json({ error: 'Invalid handle or password.' });
   }
 
-  sendSession(res, user);
-  return res.json({ user: serializeUser(user) });
+  const sessionToken = sendSession(res, user);
+  return res.json({ user: serializeUser(user), sessionToken });
 });
 
 app.post('/api/auth/logout', (req, res) => {
-  const sessionId = req.cookies.snapdesk_session;
+  const sessionId = getSessionIdFromRequest(req);
 
   if (sessionId) {
     deleteSession(sessionId);
@@ -881,7 +887,7 @@ app.patch('/api/profile/me', requireAuth, upload.single('avatar'), (req, res) =>
   }
 
   let avatarPath;
-  const currentUser = getUserBySession(req.cookies.snapdesk_session);
+  const currentUser = req.user;
 
   if (req.file) {
     avatarPath = `uploads/${req.file.filename}`;

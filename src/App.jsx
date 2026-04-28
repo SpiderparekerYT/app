@@ -28,10 +28,31 @@ const tabs = [
     icon: 'M12 12.25a3.75 3.75 0 1 0 0-7.5 3.75 3.75 0 0 0 0 7.5ZM5 19.25c0-3.04 3.13-4.75 7-4.75s7 1.71 7 4.75V20H5v-.75Z',
   },
 ];
+const NATIVE_SESSION_KEY = 'prism_native_session';
 const API_ORIGIN = (
   import.meta.env.VITE_API_ORIGIN
   || (Capacitor.isNativePlatform() ? DEFAULT_NATIVE_API_ORIGIN : '')
 ).trim();
+
+function getNativeSessionToken() {
+  if (!Capacitor.isNativePlatform()) {
+    return '';
+  }
+
+  return window.localStorage.getItem(NATIVE_SESSION_KEY) || '';
+}
+
+function setNativeSessionToken(token) {
+  if (!Capacitor.isNativePlatform()) {
+    return;
+  }
+
+  if (token) {
+    window.localStorage.setItem(NATIVE_SESSION_KEY, token);
+  } else {
+    window.localStorage.removeItem(NATIVE_SESSION_KEY);
+  }
+}
 
 function formatCount(value) {
   if (value >= 1000000) {
@@ -152,11 +173,13 @@ function getSpotifyEmbedUrl(url) {
 }
 
 async function apiFetch(url, options = {}) {
+  const nativeSessionToken = getNativeSessionToken();
   const response = await fetch(`${API_ORIGIN}${url}`, {
     ...options,
     credentials: 'include',
     headers: {
       ...(options.body instanceof FormData ? {} : { 'Content-Type': 'application/json' }),
+      ...(nativeSessionToken ? { 'x-prism-session': nativeSessionToken } : {}),
       ...(options.headers || {}),
     },
   });
@@ -635,7 +658,10 @@ function App() {
       setUser(auth.user);
       setProfileForm({ name: auth.user.name, bio: auth.user.bio });
       await loadAppData(auth.user.id);
-    } catch {
+    } catch (error) {
+      if (error.message === 'No active session.' || error.message === 'Authentication required.') {
+        setNativeSessionToken('');
+      }
       setUser(null);
     } finally {
       setBooting(false);
@@ -1501,6 +1527,10 @@ function App() {
         body: JSON.stringify(payload),
       });
 
+      if (data.sessionToken) {
+        setNativeSessionToken(data.sessionToken);
+      }
+
       if (!data.user?.id) {
         throw new Error('Could not reach the Prism server.');
       }
@@ -1517,6 +1547,7 @@ function App() {
 
   async function logout() {
     await apiFetch('/api/auth/logout', { method: 'POST' });
+    setNativeSessionToken('');
     setUser(null);
     setPosts([]);
     setProfile(null);
