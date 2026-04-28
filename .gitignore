@@ -1,0 +1,16 @@
+node_modules
+dist
+.DS_Store
+.env
+.env.local
+.env.production
+data
+uploads
+ios/App/App/public
+.git-corrupt-backup-2026-04-28
+*.mov
+.local/
+node_modules/
+.local/
+node_modules/
+.next/

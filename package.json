@@ -1,0 +1,41 @@
+{
+  "name": "snapdesk-social",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "dev:server": "node server/index.js",
+    "dev:full": "concurrently \"npm:dev:server\" \"npm:dev\"",
+    "build": "vite build",
+    "build:mobile": "vite build",
+    "build:appstore": "vite build",
+    "cap:sync": "npx cap sync ios",
+    "cap:sync:dev": "npx cap sync ios",
+    "cap:sync:prod": "npx cap sync ios",
+    "cap:open:ios": "npx cap open ios",
+    "preview": "vite preview",
+    "start": "node server/index.js"
+  },
+  "dependencies": {
+    "@capacitor/camera": "^8.1.0",
+    "@capacitor/cli": "^8.3.1",
+    "@capacitor/core": "^8.3.1",
+    "@capacitor/haptics": "^8.0.2",
+    "@capacitor/ios": "^8.3.1",
+    "@capacitor/push-notifications": "^8.0.3",
+    "@capacitor/share": "^8.0.1",
+    "bcryptjs": "^3.0.2",
+    "cookie-parser": "^1.4.7",
+    "express": "^5.1.0",
+    "multer": "^2.0.2",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^5.0.0",
+    "concurrently": "^9.2.1",
+    "typescript": "^6.0.3",
+    "vite": "^7.1.0"
+  }
+}

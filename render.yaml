@@ -1,0 +1,23 @@
+services:
+  - type: web
+    name: prism
+    runtime: node
+    plan: starter
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_VERSION
+        value: 24.15.0
+      - key: APP_ORIGIN
+        sync: false
+      - key: SPOTIFY_CLIENT_ID
+        sync: false
+      - key: DATA_DIR
+        value: /var/data/prism/data
+      - key: UPLOADS_DIR
+        value: /var/data/prism/uploads
+    disk:
+      name: prism-storage
+      mountPath: /var/data/prism
+      sizeGB: 5
