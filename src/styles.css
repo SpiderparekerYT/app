@@ -91,6 +91,7 @@ img {
   min-height: 100dvh;
   padding-top: max(24px, env(safe-area-inset-top));
   padding-bottom: max(24px, env(safe-area-inset-bottom));
+  position: relative;
   overflow-x: hidden;
   overflow-y: hidden;
   overscroll-behavior-x: none;
@@ -476,6 +477,7 @@ img {
   min-height: 0;
   scroll-padding-top: 24px;
   scroll-padding-bottom: 168px;
+  padding-bottom: 168px;
 }
 
 .app-frame::-webkit-scrollbar {
@@ -2119,10 +2121,6 @@ img {
 }
 
 .story-viewer-metrics {
-  position: absolute;
-  left: 16px;
-  bottom: 16px;
-  z-index: 3;
   display: inline-flex;
   align-items: center;
   gap: 8px;
@@ -2133,6 +2131,12 @@ img {
   color: var(--text);
   font-weight: 700;
   backdrop-filter: blur(18px);
+}
+
+.story-viewer-footer {
+  display: flex;
+  justify-content: flex-start;
+  margin-top: 14px;
 }
 
 .story-viewer-metrics span:last-child {

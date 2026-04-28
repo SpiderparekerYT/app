@@ -445,6 +445,35 @@ function App() {
   const cameraVideoRef = useRef(null);
   const cameraStreamRef = useRef(null);
 
+  function buildLocalSearchResults(query) {
+    const lowered = query.trim().toLowerCase();
+
+    if (!lowered) {
+      return { users: [], posts: [] };
+    }
+
+    return {
+      users: people
+        .filter((entry) =>
+          [entry.name, entry.handle, entry.bio]
+            .filter(Boolean)
+            .join(' ')
+            .toLowerCase()
+            .includes(lowered),
+        )
+        .slice(0, 8),
+      posts: posts
+        .filter((post) =>
+          [post.caption, post.location, post.user.name, post.user.handle]
+            .filter(Boolean)
+            .join(' ')
+            .toLowerCase()
+            .includes(lowered),
+        )
+        .slice(0, 12),
+    };
+  }
+
   async function runSearch(query) {
     const trimmed = query.trim();
 
@@ -455,10 +484,25 @@ function App() {
     }
 
     setSearchPending(true);
+    setFeedError('');
 
     try {
       const data = await apiFetch(`/api/search?q=${encodeURIComponent(trimmed)}`);
       setSearchResults(data);
+    } catch (error) {
+      if (error.message === 'Authentication required.') {
+        try {
+          await loadSession();
+          const data = await apiFetch(`/api/search?q=${encodeURIComponent(trimmed)}`);
+          setSearchResults(data);
+          return;
+        } catch {
+          setSearchResults(buildLocalSearchResults(trimmed));
+          return;
+        }
+      }
+
+      setSearchResults(buildLocalSearchResults(trimmed));
     } finally {
       setSearchPending(false);
     }
@@ -1127,6 +1171,7 @@ function App() {
 
   function selectTab(tabKey) {
     setActiveTab(tabKey);
+    setFeedError('');
 
     if (tabKey === 'Profile') {
       setActiveProfileId(null);
@@ -1536,10 +1581,29 @@ function App() {
       return;
     }
 
-    const nextProfile = await apiFetch(`/api/profile/${profileUserId}`);
-    setActiveProfileId(Number(profileUserId));
-    setPublicProfile(nextProfile);
-    setActiveTab('Profile');
+    setFeedError('');
+
+    try {
+      const nextProfile = await apiFetch(`/api/profile/${profileUserId}`);
+      setActiveProfileId(Number(profileUserId));
+      setPublicProfile(nextProfile);
+      setActiveTab('Profile');
+    } catch (error) {
+      if (error.message === 'Authentication required.') {
+        try {
+          await loadSession();
+          const nextProfile = await apiFetch(`/api/profile/${profileUserId}`);
+          setActiveProfileId(Number(profileUserId));
+          setPublicProfile(nextProfile);
+          setActiveTab('Profile');
+          return;
+        } catch {
+          // Fall through to visible error below.
+        }
+      }
+
+      setFeedError('Could not open that profile right now.');
+    }
   }
 
   async function startConversation(userIds) {
@@ -2253,48 +2317,6 @@ function App() {
           <span>{pullRefreshing ? 'Refreshing...' : pullDistance > 56 ? 'Release to refresh' : 'Pull to refresh'}</span>
         </div>
         {renderPageHeader()}
-
-        <nav
-          className={
-            ((activeTab === 'Messages' && compactMessagesLayout && selectedConversation)
-              || (activeTab === 'Snaps' && compactMessagesLayout && selectedSnapThreadUser))
-              ? 'tabbar tabbar-five tabbar-hidden'
-              : 'tabbar tabbar-five'
-          }
-          style={{ '--tab-count': 5 }}
-        >
-          {tabs.slice(0, 2).map((tab) => (
-            <button
-              key={tab.key}
-              className={tab.key === activeTab ? 'tab active' : 'tab'}
-              onClick={() => selectTab(tab.key)}
-              aria-label={tabLabel(tab.key)}
-            >
-              <Icon path={tab.icon} />
-              <span className="tab-text desktop-label">{tabLabel(tab.key)}</span>
-              <span className="tab-text mobile-label">{tab.shortLabel}</span>
-            </button>
-          ))}
-          <button
-            className="tab create-tab"
-            onClick={() => setComposerOpen(true)}
-            aria-label="Create post"
-          >
-            <span className="create-tab-circle">+</span>
-          </button>
-          {tabs.slice(2).map((tab) => (
-            <button
-              key={tab.key}
-              className={tab.key === activeTab ? 'tab active' : 'tab'}
-              onClick={() => selectTab(tab.key)}
-              aria-label={tabLabel(tab.key)}
-            >
-              <Icon path={tab.icon} />
-              <span className="tab-text desktop-label">{tabLabel(tab.key)}</span>
-              <span className="tab-text mobile-label">{tab.shortLabel}</span>
-            </button>
-          ))}
-        </nav>
 
         {feedError && <p className="form-error banner-error">{feedError}</p>}
 
@@ -3296,6 +3318,48 @@ function App() {
         )}
       </main>
 
+      <nav
+        className={
+          ((activeTab === 'Messages' && compactMessagesLayout && selectedConversation)
+            || (activeTab === 'Snaps' && compactMessagesLayout && selectedSnapThreadUser))
+            ? 'tabbar tabbar-five tabbar-hidden'
+            : 'tabbar tabbar-five'
+        }
+        style={{ '--tab-count': 5 }}
+      >
+        {tabs.slice(0, 2).map((tab) => (
+          <button
+            key={tab.key}
+            className={tab.key === activeTab ? 'tab active' : 'tab'}
+            onClick={() => selectTab(tab.key)}
+            aria-label={tabLabel(tab.key)}
+          >
+            <Icon path={tab.icon} />
+            <span className="tab-text desktop-label">{tabLabel(tab.key)}</span>
+            <span className="tab-text mobile-label">{tab.shortLabel}</span>
+          </button>
+        ))}
+        <button
+          className="tab create-tab"
+          onClick={() => setComposerOpen(true)}
+          aria-label="Create post"
+        >
+          <span className="create-tab-circle">+</span>
+        </button>
+        {tabs.slice(2).map((tab) => (
+          <button
+            key={tab.key}
+            className={tab.key === activeTab ? 'tab active' : 'tab'}
+            onClick={() => selectTab(tab.key)}
+            aria-label={tabLabel(tab.key)}
+          >
+            <Icon path={tab.icon} />
+            <span className="tab-text desktop-label">{tabLabel(tab.key)}</span>
+            <span className="tab-text mobile-label">{tab.shortLabel}</span>
+          </button>
+        ))}
+      </nav>
+
       {composerOpen && (
         <div className="modal-backdrop" onClick={() => setComposerOpen(false)}>
           <div className="composer-modal" onClick={(event) => event.stopPropagation()}>
@@ -3714,7 +3778,10 @@ function App() {
                 />
               </div>
               {activeStoryItem.caption && <p className="snap-viewer-caption">{activeStoryItem.caption}</p>}
-              {activeStoryItem.isOwnStory && (
+            </article>
+
+            {activeStoryItem.isOwnStory && (
+              <div className="story-viewer-footer">
                 <button
                   className="story-viewer-metrics"
                   onClick={openStoryViewers}
@@ -3723,8 +3790,8 @@ function App() {
                   <span>{activeStoryItem.viewerCount ?? 0}</span>
                   <span>views</span>
                 </button>
-              )}
-            </article>
+              </div>
+            )}
 
             {storyViewersOpen && activeStoryItem.isOwnStory && (
               <div className="story-viewers-sheet" onClick={(event) => event.stopPropagation()}>
