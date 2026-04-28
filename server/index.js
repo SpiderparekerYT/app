@@ -61,6 +61,15 @@ const appOrigin = process.env.APP_ORIGIN || `http://localhost:${port}`;
 const spotifyRedirectUri = `${appOrigin}/api/spotify/callback`;
 const spotifyScopes = ['user-read-email', 'user-read-private'].join(' ');
 const secureCookies = appOrigin.startsWith('https://');
+const sessionSameSite = secureCookies ? 'none' : 'lax';
+const allowedOrigins = new Set([
+  appOrigin,
+  'capacitor://localhost',
+  'ionic://localhost',
+  'http://localhost',
+  'http://localhost:3000',
+  'http://127.0.0.1:3000',
+]);
 
 fs.mkdirSync(uploadsDir, { recursive: true });
 app.set('trust proxy', 1);
@@ -79,6 +88,23 @@ const upload = multer({
 });
 
 app.use(express.json());
+app.use((req, res, next) => {
+  const origin = req.headers.origin;
+
+  if (origin && allowedOrigins.has(origin)) {
+    res.header('Access-Control-Allow-Origin', origin);
+    res.header('Vary', 'Origin');
+    res.header('Access-Control-Allow-Credentials', 'true');
+    res.header('Access-Control-Allow-Headers', 'Content-Type');
+    res.header('Access-Control-Allow-Methods', 'GET,POST,PUT,PATCH,DELETE,OPTIONS');
+  }
+
+  if (req.method === 'OPTIONS') {
+    return res.sendStatus(204);
+  }
+
+  return next();
+});
 app.use(cookieParser());
 app.use('/uploads', express.static(uploadsDir));
 
@@ -297,7 +323,7 @@ function sendSession(res, user) {
   createSession(sessionId, user.id);
   res.cookie('snapdesk_session', sessionId, {
     httpOnly: true,
-    sameSite: 'lax',
+    sameSite: sessionSameSite,
     secure: secureCookies,
     maxAge: 1000 * 60 * 60 * 24 * 7,
   });
@@ -325,13 +351,13 @@ app.get('/api/spotify/connect', requireAuth, (req, res) => {
 
   res.cookie('spotify_pkce_verifier', verifier, {
     httpOnly: true,
-    sameSite: 'lax',
+    sameSite: sessionSameSite,
     secure: secureCookies,
     maxAge: 1000 * 60 * 10,
   });
   res.cookie('spotify_oauth_state', state, {
     httpOnly: true,
-    sameSite: 'lax',
+    sameSite: sessionSameSite,
     secure: secureCookies,
     maxAge: 1000 * 60 * 10,
   });
@@ -477,7 +503,11 @@ app.post('/api/auth/logout', (req, res) => {
     deleteSession(sessionId);
   }
 
-  res.clearCookie('snapdesk_session');
+  res.clearCookie('snapdesk_session', {
+    httpOnly: true,
+    sameSite: sessionSameSite,
+    secure: secureCookies,
+  });
   res.json({ ok: true });
 });
 

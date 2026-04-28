@@ -5,6 +5,7 @@ import { Share } from '@capacitor/share';
 import { Haptics, ImpactStyle } from '@capacitor/haptics';
 import { PushNotifications } from '@capacitor/push-notifications';
 
+const DEFAULT_NATIVE_API_ORIGIN = 'https://prism-xg4h.onrender.com';
 const tabs = [
   {
     key: 'Feed',
@@ -27,7 +28,10 @@ const tabs = [
     icon: 'M12 12.25a3.75 3.75 0 1 0 0-7.5 3.75 3.75 0 0 0 0 7.5ZM5 19.25c0-3.04 3.13-4.75 7-4.75s7 1.71 7 4.75V20H5v-.75Z',
   },
 ];
-const API_ORIGIN = (import.meta.env.VITE_API_ORIGIN || '').trim();
+const API_ORIGIN = (
+  import.meta.env.VITE_API_ORIGIN
+  || (Capacitor.isNativePlatform() ? DEFAULT_NATIVE_API_ORIGIN : '')
+).trim();
 
 function formatCount(value) {
   if (value >= 1000000) {
