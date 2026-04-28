@@ -1,7 +1,6 @@
 import { DatabaseSync } from 'node:sqlite';
 import fs from 'node:fs';
 import path from 'node:path';
-import bcrypt from 'bcryptjs';
 
 const dataDir = process.env.DATA_DIR
   ? path.resolve(process.env.DATA_DIR)
@@ -16,6 +15,7 @@ fs.mkdirSync(uploadsDir, { recursive: true });
 const db = new DatabaseSync(path.join(dataDir, 'snapdesk.db'));
 
 db.exec(`
+  PRAGMA foreign_keys = ON;
   PRAGMA journal_mode = WAL;
 
   CREATE TABLE IF NOT EXISTS users (
@@ -227,66 +227,26 @@ function serializeUserRecord(user) {
   };
 }
 
-function seedDemoUsers() {
-  const count = db.prepare('SELECT COUNT(*) AS count FROM users').get().count;
+function cleanupSeededUsers() {
+  const seededHandles = ['parker', 'lenavale', 'nkmoves', 'mayamakes'];
 
-  if (count > 0) {
-    return;
-  }
+  const usersToDelete = db
+    .prepare(
+      `
+        SELECT id
+        FROM users
+        WHERE handle IN (${seededHandles.map(() => '?').join(', ')})
+      `,
+    )
+    .all(...seededHandles);
 
-  const insertUser = db.prepare(`
-    INSERT INTO users (name, handle, bio, password_hash)
-    VALUES (?, ?, ?, ?)
-  `);
-  const insertFollow = db.prepare(`
-    INSERT INTO follows (follower_id, followee_id)
-    VALUES (?, ?)
-  `);
-
-  const demoUsers = [
-    {
-      name: 'Parker',
-      handle: 'parker',
-      bio: 'Building visuals, motion, and local-first product experiments.',
-      password: 'demo1234',
-    },
-    {
-      name: 'Lena Vale',
-      handle: 'lenavale',
-      bio: 'Photographer chasing city light.',
-      password: 'demo1234',
-    },
-    {
-      name: 'Noah Kim',
-      handle: 'nkmoves',
-      bio: 'Director, editor, and espresso enthusiast.',
-      password: 'demo1234',
-    },
-    {
-      name: 'Maya Ortiz',
-      handle: 'mayamakes',
-      bio: 'Painter turning walls into memory.',
-      password: 'demo1234',
-    },
-  ];
-
-  const userIds = demoUsers.map((user) => {
-    const result = insertUser.run(
-      user.name,
-      user.handle,
-      user.bio,
-      bcrypt.hashSync(user.password, 10),
-    );
-    return Number(result.lastInsertRowid);
+  usersToDelete.forEach((user) => {
+    db.prepare('DELETE FROM users WHERE id = ?').run(user.id);
   });
-
-  insertFollow.run(userIds[0], userIds[1]);
-  insertFollow.run(userIds[0], userIds[2]);
-  insertFollow.run(userIds[0], userIds[3]);
 }
 
 cleanupPlaceholderPosts();
-seedDemoUsers();
+cleanupSeededUsers();
 
 export function createSession(sessionId, userId) {
   db.prepare('INSERT INTO sessions (id, user_id) VALUES (?, ?)').run(sessionId, userId);

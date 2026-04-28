@@ -18,9 +18,8 @@ A mobile-first social app with posts, stories, snaps, messages, notes, and a rea
 
 ## Default data
 
-- Demo users exist so you can log in and search people
 - Placeholder feed posts are removed, so the app starts with an empty real feed
-- Demo login: `parker` / `demo1234`
+- Create your own account the first time you open Prism
 
 ## Run it on your Mac
 
@@ -41,11 +40,6 @@ env PATH="$PWD/.local/node/bin:$PATH" ./.local/node/bin/node ./.local/node/lib/n
 Open:
 
 - [http://127.0.0.1:3000](http://127.0.0.1:3000) for Vite development
-
-Demo login:
-
-- Handle: `parker`
-- Password: `demo1234`
 
 ## One-command local app
 
