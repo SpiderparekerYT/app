@@ -84,10 +84,46 @@ function buildActivityCopy(item) {
 
 function buildSnapStatusCopy(thread) {
   if (thread.direction === 'sent') {
+    if (thread.savedInChat) {
+      return thread.openedAt ? 'Opened · Saved in chat' : 'Delivered · Saved in chat';
+    }
+
     return thread.openedAt ? 'Opened' : 'Delivered';
   }
 
+  if (thread.savedInChat) {
+    return thread.openedAt ? 'Opened · Saved in chat' : 'New snap · Saved in chat';
+  }
+
+  if (thread.canReplay) {
+    return 'Replay available';
+  }
+
   return thread.canOpen ? 'New snap' : 'Opened';
+}
+
+function buildSnapMessageStatus(snap) {
+  if (snap.direction === 'sent') {
+    if (snap.savedInChat) {
+      return snap.openedAt ? 'Opened · Saved in chat' : 'Delivered · Saved in chat';
+    }
+
+    return snap.openedAt ? 'Opened' : 'Delivered';
+  }
+
+  if (snap.savedInChat) {
+    return snap.openedAt ? 'Opened · Saved in chat' : 'New snap · Saved in chat';
+  }
+
+  if (snap.canOpen) {
+    return 'Tap to open';
+  }
+
+  if (snap.canReplay) {
+    return 'Replay once';
+  }
+
+  return 'Opened';
 }
 
 function normalizeCounts(counts = {}) {
@@ -2511,17 +2547,7 @@ function App() {
                           <img alt={snap.caption || 'Saved snap'} src={resolveAssetUrl(snap.imageUrl)} />
                         ) : (
                           <div className="snap-chat-placeholder">
-                            <strong>
-                              {snap.direction === 'sent'
-                                ? snap.openedAt
-                                  ? 'Opened'
-                                  : 'Delivered'
-                                : snap.canOpen
-                                  ? 'Tap to open'
-                                  : snap.canReplay
-                                    ? 'Replay once'
-                                    : 'Opened'}
-                            </strong>
+                            <strong>{buildSnapMessageStatus(snap)}</strong>
                             {snap.caption && <span>{snap.caption}</span>}
                           </div>
                         )}
@@ -2529,6 +2555,7 @@ function App() {
 
                       <div className="snap-chat-meta">
                         <span>{formatTime(snap.createdAt)}</span>
+                        <span className="snap-status-pill">{buildSnapMessageStatus(snap)}</span>
                         <div className="snap-inline-actions">
                           {snap.canOpen && (
                             <button className="ghost-button" onClick={() => openSnap(snap)} type="button">
@@ -2543,6 +2570,11 @@ function App() {
                           {!snap.savedInChat && (
                             <button className="ghost-button" onClick={() => saveSnapToChat(snap.id)} type="button">
                               Save
+                            </button>
+                          )}
+                          {snap.savedInChat && (
+                            <button className="ghost-button snap-saved-indicator" disabled type="button">
+                              Saved
                             </button>
                           )}
                         </div>

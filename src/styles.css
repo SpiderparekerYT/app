@@ -1976,10 +1976,25 @@ img {
   gap: 10px;
 }
 
+.snap-status-pill {
+  padding: 6px 10px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(247, 239, 229, 0.72);
+  font-size: 0.76rem;
+  line-height: 1;
+}
+
 .snap-inline-actions {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+}
+
+.snap-saved-indicator:disabled {
+  opacity: 1;
+  color: rgba(247, 239, 229, 0.72);
 }
 
 .live-story .story-ring,
