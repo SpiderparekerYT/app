@@ -179,6 +179,7 @@ ensureColumn('conversation_participants', 'is_muted', 'INTEGER NOT NULL DEFAULT 
 ensureColumn('conversation_participants', 'is_hidden', 'INTEGER NOT NULL DEFAULT 0');
 ensureColumn('snaps', 'replayed_at', 'TEXT');
 ensureColumn('snaps', 'saved_in_chat', 'INTEGER NOT NULL DEFAULT 0');
+ensureColumn('messages', 'image_path', "TEXT NOT NULL DEFAULT ''");
 
 function cleanupPlaceholderPosts() {
   db.prepare("DELETE FROM posts WHERE image_path LIKE 'https://images.unsplash.com/%'").run();
@@ -801,7 +802,12 @@ export function getConversationMessages(conversationId, userId) {
 
   return db
     .prepare(`
-      SELECT messages.id, messages.body, messages.created_at AS createdAt, messages.sender_id AS senderId
+      SELECT
+        messages.id,
+        messages.body,
+        messages.image_path AS imagePath,
+        messages.created_at AS createdAt,
+        messages.sender_id AS senderId
       FROM messages
       WHERE messages.conversation_id = ?
       ORDER BY messages.id ASC
@@ -810,12 +816,13 @@ export function getConversationMessages(conversationId, userId) {
     .map((entry) => ({
       id: Number(entry.id),
       body: entry.body,
+      imagePath: entry.imagePath || '',
       createdAt: entry.createdAt,
       senderId: Number(entry.senderId),
     }));
 }
 
-export function sendMessage(conversationId, senderId, body) {
+export function sendMessage(conversationId, senderId, { body = '', imagePath = '' }) {
   const participant = db
     .prepare(
       'SELECT 1 FROM conversation_participants WHERE conversation_id = ? AND user_id = ?',
@@ -828,10 +835,10 @@ export function sendMessage(conversationId, senderId, body) {
 
   const result = db
     .prepare(`
-      INSERT INTO messages (conversation_id, sender_id, body)
-      VALUES (?, ?, ?)
+      INSERT INTO messages (conversation_id, sender_id, body, image_path)
+      VALUES (?, ?, ?, ?)
     `)
-    .run(conversationId, senderId, body);
+    .run(conversationId, senderId, body, imagePath);
 
   db.prepare(
     `
@@ -853,7 +860,13 @@ export function sendMessage(conversationId, senderId, body) {
 
   recipients.forEach((recipient) => {
     if (!Number(recipient.isMuted)) {
-      createNotification(recipient.user_id, senderId, 'message', conversationId, body);
+      createNotification(
+        recipient.user_id,
+        senderId,
+        'message',
+        conversationId,
+        body || (imagePath ? 'Sent a photo' : ''),
+      );
     }
   });
 

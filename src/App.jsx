@@ -319,6 +319,8 @@ function App() {
   const [selectedMessages, setSelectedMessages] = useState([]);
   const [messageBody, setMessageBody] = useState('');
   const [messagePending, setMessagePending] = useState(false);
+  const [messageImageFile, setMessageImageFile] = useState(null);
+  const [messageImagePreview, setMessageImagePreview] = useState('');
   const [messageSearchQuery, setMessageSearchQuery] = useState('');
   const [swipedConversationId, setSwipedConversationId] = useState(null);
   const [counts, setCounts] = useState({ activity: 0, messages: 0, snaps: 0 });
@@ -366,6 +368,8 @@ function App() {
   const [snapPending, setSnapPending] = useState(false);
   const [snapViewer, setSnapViewer] = useState(null);
   const [snapError, setSnapError] = useState('');
+  const [cameraModalMode, setCameraModalMode] = useState('');
+  const [cameraError, setCameraError] = useState('');
   const [selectedSnapThreadUserId, setSelectedSnapThreadUserId] = useState(null);
   const [selectedSnapThreadUser, setSelectedSnapThreadUser] = useState(null);
   const [selectedSnapMessages, setSelectedSnapMessages] = useState([]);
@@ -391,6 +395,9 @@ function App() {
   const noteTapTimeout = useRef(null);
   const snapThreadSwipeStartX = useRef(null);
   const snapThreadSwipeStartY = useRef(null);
+  const messageImageInputRef = useRef(null);
+  const cameraVideoRef = useRef(null);
+  const cameraStreamRef = useRef(null);
 
   async function runSearch(query) {
     const trimmed = query.trim();
@@ -610,6 +617,17 @@ function App() {
   }, [snapFile]);
 
   useEffect(() => {
+    if (!messageImageFile) {
+      setMessageImagePreview('');
+      return;
+    }
+
+    const previewUrl = URL.createObjectURL(messageImageFile);
+    setMessageImagePreview(previewUrl);
+    return () => URL.revokeObjectURL(previewUrl);
+  }, [messageImageFile]);
+
+  useEffect(() => {
     if (!storyFile) {
       setStoryPreview('');
       return;
@@ -674,6 +692,15 @@ function App() {
 
     return () => window.removeEventListener('resize', updateCompactMessagesLayout);
   }, []);
+
+  useEffect(() => {
+    if (!cameraModalMode || !cameraVideoRef.current || !cameraStreamRef.current) {
+      return;
+    }
+
+    cameraVideoRef.current.srcObject = cameraStreamRef.current;
+    void cameraVideoRef.current.play().catch(() => {});
+  }, [cameraModalMode]);
 
   const savedPosts = useMemo(() => posts.filter((post) => post.saved), [posts]);
   const explorePosts = useMemo(
@@ -1356,6 +1383,8 @@ function App() {
     setSelectedConversationId(null);
     setSelectedMessages([]);
     setCounts({ activity: 0, messages: 0, snaps: 0 });
+    setMessageImageFile(null);
+    setMessageImagePreview('');
     setPushToken('');
     setSearchQuery('');
     setSearchResults({ users: [], posts: [] });
@@ -1406,7 +1435,7 @@ function App() {
   async function sendCurrentMessage(event) {
     event.preventDefault();
 
-    if (!selectedConversationId || !messageBody.trim()) {
+    if (!selectedConversationId || (!messageBody.trim() && !messageImageFile)) {
       return;
     }
 
@@ -1414,12 +1443,18 @@ function App() {
 
     try {
       await impact(ImpactStyle.Light);
+      const formData = new FormData();
+      formData.append('body', messageBody.trim());
+      if (messageImageFile) {
+        formData.append('image', messageImageFile);
+      }
       const data = await apiFetch(`/api/inbox/${selectedConversationId}/messages`, {
         method: 'POST',
-        body: JSON.stringify({ body: messageBody }),
+        body: formData,
       });
       setSelectedMessages(data.messages);
       setMessageBody('');
+      setMessageImageFile(null);
       await loadAppData(user.id);
     } finally {
       setMessagePending(false);
@@ -1577,12 +1612,88 @@ function App() {
     }
   }
 
-  async function chooseSnapImage() {
-    const file = await pickImageFromDevice();
-
-    if (file) {
-      setSnapFile(file);
+  function stopBrowserCamera() {
+    if (cameraStreamRef.current) {
+      cameraStreamRef.current.getTracks().forEach((track) => track.stop());
+      cameraStreamRef.current = null;
     }
+    if (cameraVideoRef.current) {
+      cameraVideoRef.current.srcObject = null;
+    }
+  }
+
+  async function openBrowserCamera(mode) {
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setCameraError('Camera is unavailable in this browser.');
+      return;
+    }
+
+    try {
+      stopBrowserCamera();
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: { ideal: 'environment' } },
+        audio: false,
+      });
+      cameraStreamRef.current = stream;
+      setCameraError('');
+      setCameraModalMode(mode);
+    } catch {
+      setCameraError('Could not open the camera.');
+    }
+  }
+
+  function closeCameraModal() {
+    stopBrowserCamera();
+    setCameraModalMode('');
+    setCameraError('');
+  }
+
+  async function captureBrowserPhoto() {
+    if (!cameraVideoRef.current) {
+      return;
+    }
+
+    const video = cameraVideoRef.current;
+    const canvas = document.createElement('canvas');
+    canvas.width = video.videoWidth || 1080;
+    canvas.height = video.videoHeight || 1440;
+    const context = canvas.getContext('2d');
+
+    if (!context) {
+      setCameraError('Could not capture that photo.');
+      return;
+    }
+
+    context.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+    const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.92));
+
+    if (!blob) {
+      setCameraError('Could not capture that photo.');
+      return;
+    }
+
+    const file = new File([blob], `prism-camera-${Date.now()}.jpg`, { type: 'image/jpeg' });
+
+    if (cameraModalMode === 'snap') {
+      setSnapFile(file);
+    } else if (cameraModalMode === 'message') {
+      setMessageImageFile(file);
+    }
+
+    closeCameraModal();
+  }
+
+  async function chooseSnapImage() {
+    if (isNative) {
+      const file = await pickImageFromDevice();
+      if (file) {
+        setSnapFile(file);
+      }
+      return;
+    }
+
+    await openBrowserCamera('snap');
   }
 
   async function enablePushNotifications() {
@@ -2265,22 +2376,11 @@ function App() {
                     </div>
                   </div>
 
-                  <div className="snap-camera-actions">
-                    <label className="ghost-button snap-upload-button">
-                      Pick Photo
-                      <input
-                        type="file"
-                        accept="image/*"
-                        onChange={(event) => setSnapFile(event.target.files?.[0] || null)}
-                      />
-                    </label>
-
-                    {isNative && (
-                      <button className="primary-action" onClick={chooseSnapImage} type="button">
-                        Camera
-                      </button>
-                    )}
-                  </div>
+                <div className="snap-camera-actions">
+                  <button className="primary-action" onClick={chooseSnapImage} type="button">
+                    Take Snap
+                  </button>
+                </div>
 
                   <div className="snap-compose-bar">
                     <input
@@ -2702,17 +2802,50 @@ function App() {
                               : 'message-bubble incoming'
                           }
                         >
+                          {message.imageUrl && (
+                            <div className="message-image-bubble">
+                              <img alt="Shared in chat" src={resolveAssetUrl(message.imageUrl)} />
+                            </div>
+                          )}
                           {message.body}
                         </div>
                       ))}
                     </div>
 
                     <form className="message-compose-bar" onSubmit={sendCurrentMessage}>
+                      <button
+                        className="icon-button message-attach-button"
+                        onClick={() => messageImageInputRef.current?.click()}
+                        type="button"
+                        aria-label="Add photo"
+                      >
+                        <Icon path="M6 5.5A2.5 2.5 0 0 1 8.5 3h7A2.5 2.5 0 0 1 18 5.5V7h.5A2.5 2.5 0 0 1 21 9.5v7a2.5 2.5 0 0 1-2.5 2.5h-13A2.5 2.5 0 0 1 3 16.5v-7A2.5 2.5 0 0 1 5.5 7H6V5.5Zm6 3.25a3.75 3.75 0 1 0 0 7.5 3.75 3.75 0 0 0 0-7.5Z" />
+                      </button>
+                      <input
+                        ref={messageImageInputRef}
+                        type="file"
+                        accept="image/*"
+                        hidden
+                        onChange={(event) => setMessageImageFile(event.target.files?.[0] || null)}
+                      />
                       <textarea
                         value={messageBody}
                         onChange={(event) => setMessageBody(event.target.value)}
                         placeholder="Message"
                       />
+                      {messageImagePreview && (
+                        <div className="message-image-preview">
+                          <img alt="Message preview" src={messageImagePreview} />
+                          <button
+                            className="icon-button message-image-clear"
+                            onClick={() => setMessageImageFile(null)}
+                            type="button"
+                            aria-label="Remove photo"
+                          >
+                            ×
+                          </button>
+                        </div>
+                      )}
                       <button
                         className="icon-button message-send-button"
                         disabled={messagePending}
@@ -3255,6 +3388,31 @@ function App() {
                   {item.caption && <p className="snap-viewer-caption">{item.caption}</p>}
                 </article>
               ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {cameraModalMode && (
+        <div className="modal-backdrop" onClick={closeCameraModal}>
+          <div className="composer-modal camera-modal" onClick={(event) => event.stopPropagation()}>
+            <div className="section-heading">
+              <h3>{cameraModalMode === 'snap' ? 'Take Snap' : 'Take Photo'}</h3>
+              <button className="ghost-button" onClick={closeCameraModal}>
+                Close
+              </button>
+            </div>
+
+            <div className="camera-stage">
+              <video ref={cameraVideoRef} autoPlay muted playsInline />
+            </div>
+
+            {cameraError && <p className="form-error">{cameraError}</p>}
+
+            <div className="camera-actions">
+              <button className="primary-action wide" onClick={captureBrowserPhoto} type="button">
+                Capture
+              </button>
             </div>
           </div>
         </div>

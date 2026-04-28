@@ -266,6 +266,16 @@ function normalizeNote(note) {
   };
 }
 
+function normalizeMessage(message) {
+  return {
+    id: Number(message.id),
+    body: message.body,
+    imageUrl: fileUrl(message.imagePath || ''),
+    createdAt: message.createdAt,
+    senderId: Number(message.senderId),
+  };
+}
+
 function requireAuth(req, res, next) {
   const sessionId = req.cookies.snapdesk_session;
   const user = sessionId ? getUserBySession(sessionId) : null;
@@ -684,7 +694,7 @@ app.get('/api/inbox/:id', requireAuth, (req, res) => {
   }
 
   markConversationRead(conversationId, req.user.id);
-  return res.json({ messages });
+  return res.json({ messages: messages.map(normalizeMessage) });
 });
 
 app.post('/api/inbox/:id/read', requireAuth, (req, res) => {
@@ -692,21 +702,22 @@ app.post('/api/inbox/:id/read', requireAuth, (req, res) => {
   return res.json({ ok: true });
 });
 
-app.post('/api/inbox/:id/messages', requireAuth, (req, res) => {
+app.post('/api/inbox/:id/messages', requireAuth, upload.single('image'), (req, res) => {
   const body = req.body.body?.trim();
+  const imagePath = req.file ? `uploads/${req.file.filename}` : '';
 
-  if (!body) {
-    return res.status(400).json({ error: 'Message cannot be empty.' });
+  if (!body && !imagePath) {
+    return res.status(400).json({ error: 'Add a message or choose a photo.' });
   }
 
-  const messageId = sendMessage(Number(req.params.id), req.user.id, body);
+  const messageId = sendMessage(Number(req.params.id), req.user.id, { body, imagePath });
 
   if (!messageId) {
     return res.status(404).json({ error: 'Conversation not found.' });
   }
 
   const messages = getConversationMessages(Number(req.params.id), req.user.id);
-  return res.status(201).json({ messages });
+  return res.status(201).json({ messages: messages.map(normalizeMessage) });
 });
 
 app.post('/api/inbox/:id/mute', requireAuth, (req, res) => {

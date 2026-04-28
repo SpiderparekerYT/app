@@ -1396,6 +1396,7 @@ img {
   display: flex;
   gap: 12px;
   align-items: flex-end;
+  position: relative;
 }
 
 .message-compose-bar textarea {
@@ -1408,6 +1409,49 @@ img {
   color: #fff7f0;
   padding: 16px;
   resize: none;
+}
+
+.message-attach-button {
+  flex: 0 0 48px;
+}
+
+.message-image-preview {
+  position: absolute;
+  left: 60px;
+  bottom: calc(100% + 10px);
+  width: 88px;
+  aspect-ratio: 1;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  overflow: hidden;
+  background: rgba(17, 19, 26, 0.92);
+}
+
+.message-image-preview img,
+.message-image-bubble img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.message-image-clear {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 24px;
+  height: 24px;
+  min-height: 24px;
+  padding: 0;
+  border-radius: 50%;
+  background: rgba(10, 12, 18, 0.76);
+}
+
+.message-image-bubble {
+  width: min(220px, 100%);
+  aspect-ratio: 4 / 5;
+  border-radius: 18px;
+  overflow: hidden;
+  margin-bottom: 8px;
 }
 
 .message-send-button {
@@ -1478,6 +1522,28 @@ img {
 
 .composer-modal {
   width: min(620px, 100%);
+}
+
+.camera-modal {
+  max-width: 540px;
+}
+
+.camera-stage {
+  border: 1px solid var(--line);
+  border-radius: 28px;
+  overflow: hidden;
+  background: #090b12;
+  aspect-ratio: 3 / 4;
+}
+
+.camera-stage video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.camera-actions {
+  margin-top: 16px;
 }
 
 .comments-modal {
