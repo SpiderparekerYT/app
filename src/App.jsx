@@ -819,6 +819,19 @@ function App() {
       ...storyGroups,
     ];
   }, [ownStoryGroup, storyGroups, user]);
+  const unreadStoryUserIds = useMemo(
+    () =>
+      new Set(
+        homeStoryGroups
+          .filter(
+            (story) =>
+              !story.isOwnStory &&
+              story.items.some((item) => !item.viewedByViewer),
+          )
+          .map((story) => story.user.id),
+      ),
+    [homeStoryGroups],
+  );
   const suggestedPeople = useMemo(
     () => people.filter((entry) => entry.id !== user?.id).slice(0, 4),
     [people, user?.id],
@@ -1898,6 +1911,25 @@ function App() {
   }
 
   function openStoryGroup(group) {
+    const unreadStoryIds = group.items
+      .filter((item) => !item.viewedByViewer)
+      .map((item) => item.id);
+
+    if (unreadStoryIds.length > 0) {
+      void apiFetch('/api/stories/view', {
+        method: 'POST',
+        body: JSON.stringify({ storyIds: unreadStoryIds }),
+      }).then(() => {
+        setStories((current) =>
+          current.map((story) =>
+            unreadStoryIds.includes(story.id)
+              ? { ...story, viewedByViewer: true }
+              : story,
+          ),
+        );
+      });
+    }
+
     setStoryViewer(group);
   }
 
@@ -2123,7 +2155,15 @@ function App() {
                           }
                         }}
                       >
-                        <div className={story.isOwnStory ? 'story-ring own-story-ring' : 'story-ring active-story-ring'}>
+                        <div
+                          className={
+                            story.isOwnStory
+                              ? 'story-ring own-story-ring'
+                              : unreadStoryUserIds.has(story.user.id)
+                                ? 'story-ring unread-story-ring'
+                                : 'story-ring active-story-ring'
+                          }
+                        >
                           <div className="story-core">
                             {story.user.avatarUrl ? (
                               <img alt={story.user.name} src={resolveAssetUrl(story.user.avatarUrl)} />

@@ -25,6 +25,7 @@ import {
   getOrCreateConversation,
   getProfile,
   hideConversation,
+  markStoriesViewed,
   getSnapThread,
   getSnapThreads,
   getUserSpotifyAuth,
@@ -248,6 +249,7 @@ function normalizeStory(story) {
     createdAt: story.createdAt,
     expiresAt: story.expiresAt,
     isOwnStory: Boolean(story.isOwnStory),
+    viewedByViewer: Boolean(story.viewedByViewer),
     user: serializeUser(story.user),
   };
 }
@@ -499,6 +501,19 @@ app.post('/api/stories', requireAuth, upload.single('image'), (req, res) => {
 
   const story = getActiveStories(req.user.id).find((entry) => entry.id === storyId);
   return res.status(201).json({ story: normalizeStory(story) });
+});
+
+app.post('/api/stories/view', requireAuth, (req, res) => {
+  const storyIds = Array.isArray(req.body.storyIds)
+    ? req.body.storyIds.map((id) => Number(id)).filter(Boolean)
+    : [];
+
+  if (storyIds.length === 0) {
+    return res.status(400).json({ error: 'No stories selected.' });
+  }
+
+  markStoriesViewed(storyIds, req.user.id);
+  return res.json({ ok: true });
 });
 
 app.get('/api/inbox', requireAuth, (req, res) => {

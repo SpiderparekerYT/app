@@ -142,6 +142,15 @@ db.exec(`
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
   );
 
+  CREATE TABLE IF NOT EXISTS story_views (
+    story_id INTEGER NOT NULL,
+    viewer_id INTEGER NOT NULL,
+    viewed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (story_id, viewer_id),
+    FOREIGN KEY (story_id) REFERENCES stories(id) ON DELETE CASCADE,
+    FOREIGN KEY (viewer_id) REFERENCES users(id) ON DELETE CASCADE
+  );
+
   CREATE TABLE IF NOT EXISTS notes (
     user_id INTEGER PRIMARY KEY,
     body TEXT NOT NULL DEFAULT '',
@@ -1168,6 +1177,12 @@ export function getActiveStories(viewerId) {
         stories.image_path AS imagePath,
         stories.created_at AS createdAt,
         stories.expires_at AS expiresAt,
+        EXISTS(
+          SELECT 1
+          FROM story_views
+          WHERE story_views.story_id = stories.id
+            AND story_views.viewer_id = ?
+        ) AS viewedByViewer,
         users.id AS userId,
         users.name,
         users.handle,
@@ -1189,7 +1204,7 @@ export function getActiveStories(viewerId) {
         END,
         stories.created_at DESC
     `)
-    .all(viewerId, viewerId)
+    .all(viewerId, viewerId, viewerId)
     .map((entry) => ({
       id: Number(entry.id),
       caption: entry.caption,
@@ -1198,7 +1213,19 @@ export function getActiveStories(viewerId) {
       expiresAt: entry.expiresAt,
       user: serializeUserRecord(entry),
       isOwnStory: Number(entry.userId) === Number(viewerId),
+      viewedByViewer: Boolean(entry.viewedByViewer),
     }));
+}
+
+export function markStoriesViewed(storyIds, viewerId) {
+  const insertView = db.prepare(`
+    INSERT OR IGNORE INTO story_views (story_id, viewer_id)
+    VALUES (?, ?)
+  `);
+
+  storyIds.forEach((storyId) => {
+    insertView.run(storyId, viewerId);
+  });
 }
 
 export function setUserNote(userId, { body, spotifyUrl, songTitle, artistName }) {

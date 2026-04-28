@@ -2021,6 +2021,13 @@ img {
   box-shadow: 0 0 0 3px rgba(255, 159, 99, 0.16);
 }
 
+.unread-story-ring {
+  background: linear-gradient(180deg, #74b7ff, #3f82ff 48%, #8af0ff);
+  box-shadow:
+    0 0 0 3px rgba(83, 152, 255, 0.18),
+    0 0 22px rgba(96, 172, 255, 0.34);
+}
+
 .snap-preview {
   aspect-ratio: 9 / 16;
 }
