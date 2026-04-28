@@ -378,6 +378,10 @@ function App() {
   const [storyPreview, setStoryPreview] = useState('');
   const [storyPending, setStoryPending] = useState(false);
   const [storyViewer, setStoryViewer] = useState(null);
+  const [storyViewersOpen, setStoryViewersOpen] = useState(false);
+  const [storyViewers, setStoryViewers] = useState([]);
+  const [storyViewersPending, setStoryViewersPending] = useState(false);
+  const [storyViewersError, setStoryViewersError] = useState('');
   const [pullDistance, setPullDistance] = useState(0);
   const [pullRefreshing, setPullRefreshing] = useState(false);
   const [noteForm, setNoteForm] = useState({
@@ -1466,6 +1470,9 @@ function App() {
     setStoryCaption('');
     setStoryFile(null);
     setStoryViewer(null);
+    setStoryViewersOpen(false);
+    setStoryViewers([]);
+    setStoryViewersError('');
     setActiveTab('Feed');
   }
 
@@ -1945,6 +1952,26 @@ function App() {
     });
   }
 
+  async function openStoryViewers() {
+    if (!activeStoryItem?.isOwnStory) {
+      return;
+    }
+
+    setStoryViewersOpen(true);
+    setStoryViewersPending(true);
+    setStoryViewersError('');
+
+    try {
+      const data = await apiFetch(`/api/stories/${activeStoryItem.id}/viewers`);
+      setStoryViewers(data.viewers || []);
+    } catch (error) {
+      setStoryViewers([]);
+      setStoryViewersError(error.message);
+    } finally {
+      setStoryViewersPending(false);
+    }
+  }
+
   function openStoryGroup(group) {
     const groupIndex = homeStoryGroups.findIndex((entry) => entry.user.id === group.user.id);
 
@@ -1960,6 +1987,9 @@ function App() {
       markStoryIdsViewed([firstStory.id]);
     }
 
+    setStoryViewersOpen(false);
+    setStoryViewers([]);
+    setStoryViewersError('');
     setStoryViewer({ groupIndex, itemIndex });
   }
 
@@ -1970,6 +2000,9 @@ function App() {
 
     const currentGroup = homeStoryGroups[storyViewer.groupIndex];
     if (!currentGroup) {
+      setStoryViewersOpen(false);
+      setStoryViewers([]);
+      setStoryViewersError('');
       setStoryViewer(null);
       return;
     }
@@ -1981,6 +2014,9 @@ function App() {
         if (nextStory && !nextStory.viewedByViewer) {
           markStoryIdsViewed([nextStory.id]);
         }
+        setStoryViewersOpen(false);
+        setStoryViewers([]);
+        setStoryViewersError('');
         setStoryViewer({ groupIndex: storyViewer.groupIndex, itemIndex: nextIndex });
         return;
       }
@@ -1991,16 +2027,25 @@ function App() {
           if (nextStory && !nextStory.viewedByViewer) {
             markStoryIdsViewed([nextStory.id]);
           }
+          setStoryViewersOpen(false);
+          setStoryViewers([]);
+          setStoryViewersError('');
           setStoryViewer({ groupIndex, itemIndex: 0 });
           return;
         }
       }
 
+      setStoryViewersOpen(false);
+      setStoryViewers([]);
+      setStoryViewersError('');
       setStoryViewer(null);
       return;
     }
 
     if (storyViewer.itemIndex > 0) {
+      setStoryViewersOpen(false);
+      setStoryViewers([]);
+      setStoryViewersError('');
       setStoryViewer({ groupIndex: storyViewer.groupIndex, itemIndex: storyViewer.itemIndex - 1 });
       return;
     }
@@ -2008,6 +2053,9 @@ function App() {
     for (let groupIndex = storyViewer.groupIndex - 1; groupIndex >= 0; groupIndex -= 1) {
       if (homeStoryGroups[groupIndex].items.length > 0) {
         const itemIndex = homeStoryGroups[groupIndex].items.length - 1;
+        setStoryViewersOpen(false);
+        setStoryViewers([]);
+        setStoryViewersError('');
         setStoryViewer({ groupIndex, itemIndex });
         return;
       }
@@ -3522,7 +3570,15 @@ function App() {
       )}
 
       {storyViewer && activeStoryGroup && activeStoryItem && (
-        <div className="modal-backdrop" onClick={() => setStoryViewer(null)}>
+        <div
+          className="modal-backdrop"
+          onClick={() => {
+            setStoryViewersOpen(false);
+            setStoryViewers([]);
+            setStoryViewersError('');
+            setStoryViewer(null);
+          }}
+        >
           <div className="snap-viewer story-viewer" onClick={(event) => event.stopPropagation()}>
             <div className="section-heading">
               <div className="post-user">
@@ -3532,7 +3588,15 @@ function App() {
                   <p>@{activeStoryGroup.user.handle}</p>
                 </div>
               </div>
-              <button className="ghost-button" onClick={() => setStoryViewer(null)}>
+              <button
+                className="ghost-button"
+                onClick={() => {
+                  setStoryViewersOpen(false);
+                  setStoryViewers([]);
+                  setStoryViewersError('');
+                  setStoryViewer(null);
+                }}
+              >
                 Close
               </button>
             </div>
@@ -3553,7 +3617,62 @@ function App() {
                 />
               </div>
               {activeStoryItem.caption && <p className="snap-viewer-caption">{activeStoryItem.caption}</p>}
+              {activeStoryItem.isOwnStory && (
+                <button
+                  className="story-viewer-metrics"
+                  onClick={openStoryViewers}
+                  type="button"
+                >
+                  <span>{activeStoryItem.viewerCount ?? 0}</span>
+                  <span>views</span>
+                </button>
+              )}
             </article>
+
+            {storyViewersOpen && activeStoryItem.isOwnStory && (
+              <div className="story-viewers-sheet" onClick={(event) => event.stopPropagation()}>
+                <div className="section-heading">
+                  <div>
+                    <strong>Story viewers</strong>
+                    <p>{activeStoryItem.viewerCount ?? 0} total</p>
+                  </div>
+                  <button
+                    className="ghost-button"
+                    onClick={() => {
+                      setStoryViewersOpen(false);
+                      setStoryViewers([]);
+                      setStoryViewersError('');
+                    }}
+                    type="button"
+                  >
+                    Close
+                  </button>
+                </div>
+
+                {storyViewersPending ? (
+                  <p className="story-viewers-empty">Loading viewers...</p>
+                ) : storyViewersError ? (
+                  <p className="form-error">{storyViewersError}</p>
+                ) : storyViewers.length === 0 ? (
+                  <p className="story-viewers-empty">No views yet.</p>
+                ) : (
+                  <div className="story-viewers-list">
+                    {storyViewers.map((entry) => (
+                      <article key={entry.user.id} className="story-viewer-row">
+                        <div className="post-user">
+                          <Avatar user={entry.user} size="small" />
+                          <div>
+                            <strong>{entry.user.name}</strong>
+                            <p>@{entry.user.handle}</p>
+                          </div>
+                        </div>
+                        <span className="story-viewed-at">{formatTime(entry.viewedAt)}</span>
+                      </article>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </div>
       )}

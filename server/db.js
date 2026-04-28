@@ -1183,6 +1183,11 @@ export function getActiveStories(viewerId) {
           WHERE story_views.story_id = stories.id
             AND story_views.viewer_id = ?
         ) AS viewedByViewer,
+        (
+          SELECT COUNT(*)
+          FROM story_views
+          WHERE story_views.story_id = stories.id
+        ) AS viewerCount,
         users.id AS userId,
         users.name,
         users.handle,
@@ -1214,6 +1219,7 @@ export function getActiveStories(viewerId) {
       user: serializeUserRecord(entry),
       isOwnStory: Number(entry.userId) === Number(viewerId),
       viewedByViewer: Boolean(entry.viewedByViewer),
+      viewerCount: Number(entry.userId) === Number(viewerId) ? Number(entry.viewerCount || 0) : null,
     }));
 }
 
@@ -1226,6 +1232,42 @@ export function markStoriesViewed(storyIds, viewerId) {
   storyIds.forEach((storyId) => {
     insertView.run(storyId, viewerId);
   });
+}
+
+export function getStoryViewers(storyId, ownerId) {
+  const story = db
+    .prepare(`
+      SELECT id
+      FROM stories
+      WHERE id = ?
+        AND user_id = ?
+        AND expires_at > CURRENT_TIMESTAMP
+    `)
+    .get(storyId, ownerId);
+
+  if (!story) {
+    return null;
+  }
+
+  return db
+    .prepare(`
+      SELECT
+        users.id AS userId,
+        users.name,
+        users.handle,
+        users.bio,
+        users.avatar_path AS avatarPath,
+        story_views.viewed_at AS viewedAt
+      FROM story_views
+      JOIN users ON users.id = story_views.viewer_id
+      WHERE story_views.story_id = ?
+      ORDER BY story_views.viewed_at DESC
+    `)
+    .all(storyId)
+    .map((entry) => ({
+      user: serializeUserRecord(entry),
+      viewedAt: entry.viewedAt,
+    }));
 }
 
 export function setUserNote(userId, { body, spotifyUrl, songTitle, artistName }) {

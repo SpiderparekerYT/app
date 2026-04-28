@@ -19,6 +19,7 @@ import {
   getConversationMessages,
   getFeed,
   getActiveStories,
+  getStoryViewers,
   getInboxNotes,
   listPeople,
   getMessages,
@@ -250,6 +251,7 @@ function normalizeStory(story) {
     expiresAt: story.expiresAt,
     isOwnStory: Boolean(story.isOwnStory),
     viewedByViewer: Boolean(story.viewedByViewer),
+    viewerCount: typeof story.viewerCount === 'number' ? story.viewerCount : null,
     user: serializeUser(story.user),
   };
 }
@@ -514,6 +516,27 @@ app.post('/api/stories/view', requireAuth, (req, res) => {
 
   markStoriesViewed(storyIds, req.user.id);
   return res.json({ ok: true });
+});
+
+app.get('/api/stories/:id/viewers', requireAuth, (req, res) => {
+  const storyId = Number(req.params.id);
+
+  if (!storyId) {
+    return res.status(400).json({ error: 'Invalid story.' });
+  }
+
+  const viewers = getStoryViewers(storyId, req.user.id);
+
+  if (viewers === null) {
+    return res.status(404).json({ error: 'Story not found.' });
+  }
+
+  return res.json({
+    viewers: viewers.map((entry) => ({
+      user: serializeUser(entry.user),
+      viewedAt: entry.viewedAt,
+    })),
+  });
 });
 
 app.get('/api/inbox', requireAuth, (req, res) => {
