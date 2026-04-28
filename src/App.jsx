@@ -1261,6 +1261,14 @@ function App() {
     }));
   }
 
+  function upsertStory(createdStory) {
+    if (!createdStory?.id) {
+      return;
+    }
+
+    setStories((current) => [createdStory, ...current.filter((story) => story.id !== createdStory.id)]);
+  }
+
   function removePostLocally(postId) {
     setPosts((current) => current.filter((post) => post.id !== postId));
     setProfile((current) =>
@@ -1871,14 +1879,17 @@ function App() {
       const formData = new FormData();
       formData.append('caption', storyCaption);
       formData.append('image', storyFile);
-      await apiFetch('/api/stories', {
+      const data = await apiFetch('/api/stories', {
         method: 'POST',
         body: formData,
       });
+      if (data.story) {
+        upsertStory(data.story);
+      }
       setStoryCaption('');
       setStoryFile(null);
       setStoryComposerOpen(false);
-      await loadOptionalData();
+      void loadOptionalData();
     } catch (error) {
       setFeedError(error.message);
     } finally {
