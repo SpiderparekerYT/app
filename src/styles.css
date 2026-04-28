@@ -1692,12 +1692,36 @@ img {
   background: rgba(255, 255, 255, 0.28);
 }
 
+.story-progress-active {
+  background: rgba(122, 191, 255, 0.96) !important;
+}
+
 .story-stack {
   display: flex;
   flex-direction: column;
   gap: 18px;
   max-height: 70vh;
   overflow: auto;
+}
+
+.story-slide-single {
+  position: relative;
+}
+
+.story-nav-zone {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 50%;
+  z-index: 2;
+}
+
+.story-nav-left {
+  left: 0;
+}
+
+.story-nav-right {
+  right: 0;
 }
 
 .snaps-layout {

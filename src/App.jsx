@@ -832,6 +832,20 @@ function App() {
       ),
     [homeStoryGroups],
   );
+  const activeStoryGroup = useMemo(() => {
+    if (!storyViewer) {
+      return null;
+    }
+
+    return homeStoryGroups[storyViewer.groupIndex] || null;
+  }, [homeStoryGroups, storyViewer]);
+  const activeStoryItem = useMemo(() => {
+    if (!activeStoryGroup || !storyViewer) {
+      return null;
+    }
+
+    return activeStoryGroup.items[storyViewer.itemIndex] || null;
+  }, [activeStoryGroup, storyViewer]);
   const suggestedPeople = useMemo(
     () => people.filter((entry) => entry.id !== user?.id).slice(0, 4),
     [people, user?.id],
@@ -1910,27 +1924,94 @@ function App() {
     }
   }
 
-  function openStoryGroup(group) {
-    const unreadStoryIds = group.items
-      .filter((item) => !item.viewedByViewer)
-      .map((item) => item.id);
+  function markStoryIdsViewed(storyIds) {
+    const unreadStoryIds = storyIds.filter(Boolean);
 
-    if (unreadStoryIds.length > 0) {
-      void apiFetch('/api/stories/view', {
-        method: 'POST',
-        body: JSON.stringify({ storyIds: unreadStoryIds }),
-      }).then(() => {
-        setStories((current) =>
-          current.map((story) =>
-            unreadStoryIds.includes(story.id)
-              ? { ...story, viewedByViewer: true }
-              : story,
-          ),
-        );
-      });
+    if (unreadStoryIds.length === 0) {
+      return;
     }
 
-    setStoryViewer(group);
+    void apiFetch('/api/stories/view', {
+      method: 'POST',
+      body: JSON.stringify({ storyIds: unreadStoryIds }),
+    }).then(() => {
+      setStories((current) =>
+        current.map((story) =>
+          unreadStoryIds.includes(story.id)
+            ? { ...story, viewedByViewer: true }
+            : story,
+        ),
+      );
+    });
+  }
+
+  function openStoryGroup(group) {
+    const groupIndex = homeStoryGroups.findIndex((entry) => entry.user.id === group.user.id);
+
+    if (groupIndex === -1 || group.items.length === 0) {
+      return;
+    }
+
+    const firstUnreadIndex = group.items.findIndex((item) => !item.viewedByViewer);
+    const itemIndex = firstUnreadIndex >= 0 ? firstUnreadIndex : 0;
+    const firstStory = group.items[itemIndex];
+
+    if (firstStory && !firstStory.viewedByViewer) {
+      markStoryIdsViewed([firstStory.id]);
+    }
+
+    setStoryViewer({ groupIndex, itemIndex });
+  }
+
+  function goToStory(direction) {
+    if (!storyViewer) {
+      return;
+    }
+
+    const currentGroup = homeStoryGroups[storyViewer.groupIndex];
+    if (!currentGroup) {
+      setStoryViewer(null);
+      return;
+    }
+
+    if (direction === 'next') {
+      if (storyViewer.itemIndex < currentGroup.items.length - 1) {
+        const nextIndex = storyViewer.itemIndex + 1;
+        const nextStory = currentGroup.items[nextIndex];
+        if (nextStory && !nextStory.viewedByViewer) {
+          markStoryIdsViewed([nextStory.id]);
+        }
+        setStoryViewer({ groupIndex: storyViewer.groupIndex, itemIndex: nextIndex });
+        return;
+      }
+
+      for (let groupIndex = storyViewer.groupIndex + 1; groupIndex < homeStoryGroups.length; groupIndex += 1) {
+        if (homeStoryGroups[groupIndex].items.length > 0) {
+          const nextStory = homeStoryGroups[groupIndex].items[0];
+          if (nextStory && !nextStory.viewedByViewer) {
+            markStoryIdsViewed([nextStory.id]);
+          }
+          setStoryViewer({ groupIndex, itemIndex: 0 });
+          return;
+        }
+      }
+
+      setStoryViewer(null);
+      return;
+    }
+
+    if (storyViewer.itemIndex > 0) {
+      setStoryViewer({ groupIndex: storyViewer.groupIndex, itemIndex: storyViewer.itemIndex - 1 });
+      return;
+    }
+
+    for (let groupIndex = storyViewer.groupIndex - 1; groupIndex >= 0; groupIndex -= 1) {
+      if (homeStoryGroups[groupIndex].items.length > 0) {
+        const itemIndex = homeStoryGroups[groupIndex].items.length - 1;
+        setStoryViewer({ groupIndex, itemIndex });
+        return;
+      }
+    }
   }
 
   async function saveNote(event) {
@@ -3440,15 +3521,15 @@ function App() {
         </div>
       )}
 
-      {storyViewer && (
+      {storyViewer && activeStoryGroup && activeStoryItem && (
         <div className="modal-backdrop" onClick={() => setStoryViewer(null)}>
           <div className="snap-viewer story-viewer" onClick={(event) => event.stopPropagation()}>
             <div className="section-heading">
               <div className="post-user">
-                <Avatar user={storyViewer.user} size="small" />
+                <Avatar user={activeStoryGroup.user} size="small" />
                 <div>
-                  <strong>{storyViewer.user.name}</strong>
-                  <p>@{storyViewer.user.handle}</p>
+                  <strong>{activeStoryGroup.user.name}</strong>
+                  <p>@{activeStoryGroup.user.handle}</p>
                 </div>
               </div>
               <button className="ghost-button" onClick={() => setStoryViewer(null)}>
@@ -3457,21 +3538,22 @@ function App() {
             </div>
 
             <div className="story-progress">
-              {storyViewer.items.map((item) => (
-                <span key={item.id} />
+              {activeStoryGroup.items.map((item, index) => (
+                <span key={item.id} className={index <= storyViewer.itemIndex ? 'story-progress-active' : ''} />
               ))}
             </div>
 
-            <div className="story-stack">
-              {storyViewer.items.map((item) => (
-                <article key={item.id} className="story-slide">
-                  <div className="snap-viewer-image">
-                    <img alt={item.caption || `${storyViewer.user.name} story`} src={resolveAssetUrl(item.imageUrl)} />
-                  </div>
-                  {item.caption && <p className="snap-viewer-caption">{item.caption}</p>}
-                </article>
-              ))}
-            </div>
+            <article className="story-slide story-slide-single">
+              <div className="story-nav-zone story-nav-left" onClick={() => goToStory('previous')} role="button" tabIndex={0} />
+              <div className="story-nav-zone story-nav-right" onClick={() => goToStory('next')} role="button" tabIndex={0} />
+              <div className="snap-viewer-image">
+                <img
+                  alt={activeStoryItem.caption || `${activeStoryGroup.user.name} story`}
+                  src={resolveAssetUrl(activeStoryItem.imageUrl)}
+                />
+              </div>
+              {activeStoryItem.caption && <p className="snap-viewer-caption">{activeStoryItem.caption}</p>}
+            </article>
           </div>
         </div>
       )}
