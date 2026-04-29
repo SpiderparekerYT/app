@@ -3234,27 +3234,21 @@ function App() {
                     <span>Followers {formatCount(displayedProfile.stats.followers)}</span>
                     <span>Posts {formatCount(displayedProfile.stats.posts)}</span>
                   </div>
-                  <p>{displayedProfile.user.bio}</p>
+                  {displayedProfile.user.bio && <p className="profile-hero-summary">{displayedProfile.user.bio}</p>}
                 </div>
               </div>
 
               <div className="profile-action-row">
                 {isViewingOwnProfile ? (
                   <>
-                    <button className="primary-action" onClick={() => setComposerOpen(true)}>
-                      Create post
-                    </button>
-                    <button className="ghost-button" onClick={() => setStoryComposerOpen(true)}>
-                      Add story
-                    </button>
                     <button className="ghost-button" onClick={() => setProfileEditorOpen(true)}>
                       Edit profile
                     </button>
-                    <button className="ghost-button" onClick={shareProfile}>
-                      Share
+                    <button className="primary-action" onClick={() => setComposerOpen(true)}>
+                      New post
                     </button>
-                    <button className="ghost-button" onClick={logout}>
-                      Log out
+                    <button className="ghost-button" onClick={() => setStoryComposerOpen(true)}>
+                      Story
                     </button>
                   </>
                 ) : (
@@ -3265,43 +3259,9 @@ function App() {
                     <button className="ghost-button" onClick={() => startConversation(displayedProfile.user.id)}>
                       Message
                     </button>
-                    <button className="ghost-button" onClick={() => setActiveTab('Explore')}>
-                      Back
-                    </button>
                   </>
                 )}
               </div>
-            </div>
-
-            <div className="profile-headline">
-              <div>
-                <p className="eyebrow">{isViewingOwnProfile ? 'Profile' : 'Public profile'}</p>
-                <h3>{displayedProfile.user.name}</h3>
-              </div>
-              <div className="profile-inline-meta">
-                <span>{displayedProfile.stats.posts} posts</span>
-                <span>{formatCount(displayedProfile.stats.followers)} followers</span>
-                <span>{formatCount(displayedProfile.stats.following)} following</span>
-              </div>
-            </div>
-
-            <div className="profile-stats">
-              <article>
-                <strong>{displayedProfile.stats.posts}</strong>
-                <span>Posts</span>
-              </article>
-              <article>
-                <strong>{formatCount(displayedProfile.stats.followers)}</strong>
-                <span>Followers</span>
-              </article>
-              <article>
-                <strong>{formatCount(displayedProfile.stats.following)}</strong>
-                <span>Following</span>
-              </article>
-              <article>
-                <strong>{formatCount(displayedProfile.stats.totalLikes)}</strong>
-                <span>Total likes</span>
-              </article>
             </div>
 
             {displayedStoryGroup && (
@@ -3327,34 +3287,25 @@ function App() {
               </section>
             )}
 
-            {isViewingOwnProfile && (
-              <section className="insight-card compact">
-                <div className="section-heading">
-                  <h3>Notifications</h3>
-                  <span>{pushPermission}</span>
-                </div>
-                <div className="post-owner-actions">
-                  <button className="ghost-button" onClick={enablePushNotifications}>
-                    Enable
-                  </button>
-                  {pushToken && <button className="ghost-button">Ready</button>}
-                </div>
-              </section>
-            )}
-
-            <div className="mini-gallery">
-              {displayedProfile.posts.length === 0 && (
-                <section className="empty-state compact-empty">
-                  <h3>No posts yet</h3>
-                </section>
-              )}
-              {displayedProfile.posts.map((post) => (
-                <article key={post.id} className="mini-tile">
-                  <img alt={post.caption} src={resolveAssetUrl(post.imageUrl)} />
-                  <span>{post.location}</span>
-                </article>
-              ))}
-            </div>
+            <section className="profile-page-posts">
+              <div className="section-heading">
+                <h3>Posts</h3>
+                <span>{formatCount(displayedProfile.stats.posts)}</span>
+              </div>
+              <div className="mini-gallery">
+                {displayedProfile.posts.length === 0 && (
+                  <section className="empty-state compact-empty">
+                    <h3>No posts yet</h3>
+                  </section>
+                )}
+                {displayedProfile.posts.map((post) => (
+                  <article key={post.id} className="mini-tile">
+                    <img alt={post.caption} src={resolveAssetUrl(post.imageUrl)} />
+                    <span>{post.location}</span>
+                  </article>
+                ))}
+              </div>
+            </section>
           </section>
         )}
       </main>

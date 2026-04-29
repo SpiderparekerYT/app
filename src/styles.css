@@ -698,13 +698,19 @@ img {
 .profile-hero-card {
   display: flex;
   flex-direction: column;
-  gap: 18px;
+  gap: 16px;
 }
 
 .profile-hero-copy {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
+  min-width: 0;
+}
+
+.profile-hero-copy h3,
+.profile-hero-copy p {
+  margin: 0;
 }
 
 .profile-hero-stats {
@@ -719,16 +725,24 @@ img {
   white-space: nowrap;
 }
 
-.profile-headline {
-  display: flex;
-  align-items: end;
-  justify-content: space-between;
-  gap: 16px;
+.profile-hero-summary {
+  max-width: 42ch;
+  line-height: 1.5;
 }
 
-.profile-inline-meta {
-  gap: 16px;
-  flex-wrap: wrap;
+.profile-action-row {
+  margin-top: 0;
+}
+
+.profile-action-row .primary-action,
+.profile-action-row .ghost-button {
+  flex: 1 1 0;
+}
+
+.profile-page-posts {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
 }
 
 .highlight-card {
@@ -1531,6 +1545,10 @@ img {
   display: flex;
   flex-direction: column;
   gap: 20px;
+}
+
+.profile-page {
+  padding-bottom: 4px;
 }
 
 .profile-stats {
@@ -2404,7 +2422,6 @@ img {
     grid-template-columns: 1fr 1fr;
   }
 
-  .profile-headline,
   .activity-summary-grid {
     flex-direction: column;
     align-items: stretch;
@@ -2478,10 +2495,6 @@ img {
 
   .creator-card {
     min-width: 136px;
-  }
-
-  .profile-inline-meta {
-    gap: 10px;
   }
 
   .messages-shell-header {
