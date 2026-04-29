@@ -217,7 +217,13 @@ function deleteNotification(userId, actorId, type, entityId) {
 }
 
 function avatarFallback(name) {
-  return name
+  const safeName = `${name || ''}`.trim();
+
+  if (!safeName) {
+    return '?';
+  }
+
+  return safeName
     .split(' ')
     .map((part) => part[0])
     .join('')
@@ -226,13 +232,15 @@ function avatarFallback(name) {
 }
 
 function serializeUserRecord(user) {
+  const safeName = user.name || 'Unknown user';
+
   return {
-    id: Number(user.userId || user.id),
-    name: user.name,
-    handle: user.handle,
-    bio: user.bio,
+    id: Number(user.userId || user.id || 0),
+    name: safeName,
+    handle: user.handle || '',
+    bio: user.bio || '',
     avatarPath: user.avatar_path || user.avatarPath || '',
-    avatarFallback: avatarFallback(user.name),
+    avatarFallback: avatarFallback(safeName),
   };
 }
 
@@ -682,6 +690,7 @@ export function getMessages(viewerId) {
       ORDER BY updatedAt DESC
     `)
     .all(viewerId, viewerId, viewerId, viewerId, viewerId, viewerId, viewerId, viewerId, viewerId)
+    .filter((entry) => Number(entry.userId) > 0 && entry.name)
     .map((entry) => ({
       id: Number(entry.id),
       preview: entry.preview,

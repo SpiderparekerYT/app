@@ -616,49 +616,86 @@ function App() {
   }
 
   async function loadAppData(userId) {
-    try {
-      setFeedError('');
-      const [feedData, profileData, activityData, inboxData, unreadCounts] = await Promise.all([
-        apiFetch('/api/feed'),
-        apiFetch(`/api/profile/${userId}`),
-        apiFetch('/api/activity'),
-        apiFetch('/api/inbox'),
-        apiFetch('/api/unread-counts'),
-      ]);
+    setFeedError('');
 
-      setPosts(feedData.posts);
-      setProfile(profileData);
-      setActivity(activityData.activity);
-      setInbox(inboxData.conversations);
-      setCounts(normalizeCounts(unreadCounts));
-      setUser(profileData.user);
-      setProfileForm({ name: profileData.user.name, bio: profileData.user.bio });
+    const [feedResult, profileResult, activityResult, inboxResult, unreadResult] = await Promise.allSettled([
+      apiFetch('/api/feed'),
+      apiFetch(`/api/profile/${userId}`),
+      apiFetch('/api/activity'),
+      apiFetch('/api/inbox'),
+      apiFetch('/api/unread-counts'),
+    ]);
 
-      if (selectedConversationId) {
-        const stillExists = inboxData.conversations.find((entry) => entry.id === selectedConversationId);
-        if (stillExists) {
+    const nextPosts = feedResult.status === 'fulfilled' ? feedResult.value.posts : [];
+    setPosts(nextPosts);
+
+    if (profileResult.status === 'fulfilled') {
+      setProfile(profileResult.value);
+      setUser(profileResult.value.user);
+      setProfileForm({ name: profileResult.value.user.name, bio: profileResult.value.user.bio });
+    } else if (user && Number(user.id) === Number(userId)) {
+      const fallbackProfile = {
+        user,
+        following: false,
+        isSelf: true,
+        stats: {
+          posts: nextPosts.filter((post) => Number(post.user.id) === Number(user.id)).length,
+          followers: profile?.stats?.followers || 0,
+          following: profile?.stats?.following || 0,
+          totalLikes: profile?.stats?.totalLikes || 0,
+        },
+        posts: nextPosts.filter((post) => Number(post.user.id) === Number(user.id)),
+      };
+      setProfile(fallbackProfile);
+      setProfileForm({ name: user.name, bio: user.bio });
+    }
+
+    setActivity(activityResult.status === 'fulfilled' ? activityResult.value.activity : []);
+
+    const nextInbox = inboxResult.status === 'fulfilled' ? inboxResult.value.conversations : [];
+    setInbox(nextInbox);
+    setCounts(unreadResult.status === 'fulfilled' ? normalizeCounts(unreadResult.value) : { activity: 0, messages: 0, snaps: 0 });
+
+    if (selectedConversationId) {
+      const stillExists = nextInbox.find((entry) => entry.id === selectedConversationId);
+      if (stillExists) {
+        try {
           await loadConversation(selectedConversationId);
-        } else {
+        } catch {
           setSelectedConversationId(null);
           setSelectedMessages([]);
         }
+      } else {
+        setSelectedConversationId(null);
+        setSelectedMessages([]);
       }
+    }
 
+    try {
       await loadOptionalData();
+    } catch {
+      // Optional side-panels should not block the main app shell.
+    }
 
-      if (selectedSnapThreadUserId) {
-        try {
-          const snapThreadData = await apiFetch(`/api/snaps/thread/${selectedSnapThreadUserId}`);
-          setSelectedSnapThreadUser(snapThreadData.user);
-          setSelectedSnapMessages(snapThreadData.snaps);
-        } catch {
-          setSelectedSnapThreadUserId(null);
-          setSelectedSnapThreadUser(null);
-          setSelectedSnapMessages([]);
-        }
+    if (selectedSnapThreadUserId) {
+      try {
+        const snapThreadData = await apiFetch(`/api/snaps/thread/${selectedSnapThreadUserId}`);
+        setSelectedSnapThreadUser(snapThreadData.user);
+        setSelectedSnapMessages(snapThreadData.snaps);
+      } catch {
+        setSelectedSnapThreadUserId(null);
+        setSelectedSnapThreadUser(null);
+        setSelectedSnapMessages([]);
       }
-    } catch (error) {
-      setFeedError(error.message);
+    }
+
+    const criticalErrors = [feedResult, profileResult]
+      .filter((result) => result.status === 'rejected')
+      .map((result) => result.reason?.message)
+      .filter(Boolean);
+
+    if (criticalErrors.length > 0 && nextPosts.length === 0) {
+      setFeedError(criticalErrors[0]);
     }
   }
 
