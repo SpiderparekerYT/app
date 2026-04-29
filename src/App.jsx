@@ -174,15 +174,25 @@ function getSpotifyEmbedUrl(url) {
 
 async function apiFetch(url, options = {}) {
   const nativeSessionToken = getNativeSessionToken();
-  const response = await fetch(`${API_ORIGIN}${url}`, {
-    ...options,
-    credentials: 'include',
-    headers: {
-      ...(options.body instanceof FormData ? {} : { 'Content-Type': 'application/json' }),
-      ...(nativeSessionToken ? { 'x-prism-session': nativeSessionToken } : {}),
-      ...(options.headers || {}),
-    },
-  });
+  let response;
+
+  try {
+    response = await fetch(`${API_ORIGIN}${url}`, {
+      ...options,
+      credentials: 'include',
+      headers: {
+        ...(options.body instanceof FormData ? {} : { 'Content-Type': 'application/json' }),
+        ...(nativeSessionToken ? { 'x-prism-session': nativeSessionToken } : {}),
+        ...(options.headers || {}),
+      },
+    });
+  } catch (error) {
+    throw new Error(
+      error instanceof Error && error.message
+        ? `Could not reach the Prism server. ${error.message}`
+        : 'Could not reach the Prism server.',
+    );
+  }
 
   const data = await response.json().catch(() => ({}));
 
