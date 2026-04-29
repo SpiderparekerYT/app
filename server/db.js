@@ -169,6 +169,43 @@ db.exec(`
     FOREIGN KEY (note_user_id) REFERENCES notes(user_id) ON DELETE CASCADE,
     FOREIGN KEY (liker_id) REFERENCES users(id) ON DELETE CASCADE
   );
+
+  CREATE TABLE IF NOT EXISTS web_push_subscriptions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    endpoint TEXT NOT NULL UNIQUE,
+    p256dh TEXT NOT NULL,
+    auth TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+  );
+
+  CREATE TABLE IF NOT EXISTS device_push_tokens (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    token TEXT NOT NULL UNIQUE,
+    platform TEXT NOT NULL DEFAULT 'ios',
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+  );
+
+  CREATE TABLE IF NOT EXISTS push_queue (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    notification_id INTEGER NOT NULL,
+    user_id INTEGER NOT NULL,
+    actor_id INTEGER NOT NULL,
+    type TEXT NOT NULL,
+    entity_id INTEGER NOT NULL DEFAULT 0,
+    text TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    delivered_at TEXT,
+    last_error TEXT NOT NULL DEFAULT '',
+    FOREIGN KEY (notification_id) REFERENCES notifications(id) ON DELETE CASCADE,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    FOREIGN KEY (actor_id) REFERENCES users(id) ON DELETE CASCADE
+  );
 `);
 
 function ensureColumn(table, column, definition) {
@@ -199,15 +236,33 @@ function createNotification(userId, actorId, type, entityId, text) {
     return;
   }
 
-  db.prepare(
+  const result = db.prepare(
     `
       INSERT INTO notifications (user_id, actor_id, type, entity_id, text)
       VALUES (?, ?, ?, ?, ?)
     `,
   ).run(userId, actorId, type, entityId, text);
+
+  db.prepare(
+    `
+      INSERT INTO push_queue (notification_id, user_id, actor_id, type, entity_id, text)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `,
+  ).run(Number(result.lastInsertRowid), userId, actorId, type, entityId, text);
 }
 
 function deleteNotification(userId, actorId, type, entityId) {
+  db.prepare(
+    `
+      DELETE FROM push_queue
+      WHERE notification_id IN (
+        SELECT id
+        FROM notifications
+        WHERE user_id = ? AND actor_id = ? AND type = ? AND entity_id = ?
+      )
+    `,
+  ).run(userId, actorId, type, entityId);
+
   db.prepare(
     `
       DELETE FROM notifications
@@ -1497,4 +1552,134 @@ export function getUnreadCounts(userId) {
     messages: Number(messages),
     snaps: Number(snaps),
   };
+}
+
+export function saveWebPushSubscription(userId, subscription) {
+  const endpoint = subscription?.endpoint?.trim();
+  const p256dh = subscription?.keys?.p256dh?.trim();
+  const auth = subscription?.keys?.auth?.trim();
+
+  if (!endpoint || !p256dh || !auth) {
+    return false;
+  }
+
+  db.prepare(
+    `
+      INSERT INTO web_push_subscriptions (user_id, endpoint, p256dh, auth, updated_at)
+      VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+      ON CONFLICT(endpoint) DO UPDATE SET
+        user_id = excluded.user_id,
+        p256dh = excluded.p256dh,
+        auth = excluded.auth,
+        updated_at = CURRENT_TIMESTAMP
+    `,
+  ).run(userId, endpoint, p256dh, auth);
+
+  return true;
+}
+
+export function removeWebPushSubscription(endpoint) {
+  db.prepare('DELETE FROM web_push_subscriptions WHERE endpoint = ?').run(endpoint);
+}
+
+export function listWebPushSubscriptions(userId) {
+  return db
+    .prepare(
+      `
+        SELECT endpoint, p256dh, auth
+        FROM web_push_subscriptions
+        WHERE user_id = ?
+      `,
+    )
+    .all(userId)
+    .map((entry) => ({
+      endpoint: entry.endpoint,
+      keys: {
+        p256dh: entry.p256dh,
+        auth: entry.auth,
+      },
+    }));
+}
+
+export function saveDevicePushToken(userId, token, platform = 'ios') {
+  const normalizedToken = `${token || ''}`.trim();
+
+  if (!normalizedToken) {
+    return false;
+  }
+
+  db.prepare(
+    `
+      INSERT INTO device_push_tokens (user_id, token, platform, updated_at)
+      VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+      ON CONFLICT(token) DO UPDATE SET
+        user_id = excluded.user_id,
+        platform = excluded.platform,
+        updated_at = CURRENT_TIMESTAMP
+    `,
+  ).run(userId, normalizedToken, platform);
+
+  return true;
+}
+
+export function removeDevicePushToken(token) {
+  db.prepare('DELETE FROM device_push_tokens WHERE token = ?').run(token);
+}
+
+export function listDevicePushTokens(userId) {
+  return db
+    .prepare(
+      `
+        SELECT token, platform
+        FROM device_push_tokens
+        WHERE user_id = ?
+      `,
+    )
+    .all(userId);
+}
+
+export function getPendingPushJobs(limit = 20) {
+  return db
+    .prepare(
+      `
+        SELECT id, notification_id AS notificationId, user_id AS userId, actor_id AS actorId,
+               type, entity_id AS entityId, text, created_at AS createdAt
+        FROM push_queue
+        WHERE delivered_at IS NULL
+        ORDER BY id ASC
+        LIMIT ?
+      `,
+    )
+    .all(limit)
+    .map((entry) => ({
+      id: Number(entry.id),
+      notificationId: Number(entry.notificationId),
+      userId: Number(entry.userId),
+      actorId: Number(entry.actorId),
+      type: entry.type,
+      entityId: Number(entry.entityId),
+      text: entry.text,
+      createdAt: entry.createdAt,
+    }));
+}
+
+export function markPushJobDelivered(jobId) {
+  db.prepare(
+    `
+      UPDATE push_queue
+      SET delivered_at = CURRENT_TIMESTAMP,
+          last_error = ''
+      WHERE id = ?
+    `,
+  ).run(jobId);
+}
+
+export function markPushJobError(jobId, errorMessage) {
+  db.prepare(
+    `
+      UPDATE push_queue
+      SET last_error = ?
+      WHERE id = ?
+    `,
+  ).run(`${errorMessage || ''}`.slice(0, 400), jobId);
 }

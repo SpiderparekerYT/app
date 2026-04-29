@@ -159,6 +159,13 @@ function normalizeCounts(counts = {}) {
   };
 }
 
+function urlBase64ToUint8Array(base64String) {
+  const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
+  const base64 = `${base64String}${padding}`.replace(/-/g, '+').replace(/_/g, '/');
+  const rawData = window.atob(base64);
+  return Uint8Array.from([...rawData].map((char) => char.charCodeAt(0)));
+}
+
 function getSpotifyEmbedUrl(url) {
   if (!url) {
     return '';
@@ -507,6 +514,63 @@ function App() {
     };
   }
 
+  async function syncNativePushToken(tokenValue = pushToken) {
+    if (!isNative || !user?.id || !tokenValue) {
+      return false;
+    }
+
+    await apiFetch('/api/push/device-token', {
+      method: 'POST',
+      body: JSON.stringify({
+        token: tokenValue,
+        platform: Capacitor.getPlatform() || 'ios',
+      }),
+    });
+
+    return true;
+  }
+
+  async function syncWebPushSubscription() {
+    if (isNative || !user?.id) {
+      return false;
+    }
+
+    if (!('Notification' in window) || !('serviceWorker' in navigator) || !('PushManager' in window)) {
+      throw new Error('This browser does not support web notifications.');
+    }
+
+    const permission = Notification.permission;
+    setPushPermission(permission === 'default' ? 'prompt' : permission);
+
+    if (permission !== 'granted') {
+      return false;
+    }
+
+    const pushConfig = await apiFetch('/api/push/config');
+
+    if (!pushConfig.webPushEnabled || !pushConfig.vapidPublicKey) {
+      throw new Error('Web notifications are not configured on the server yet.');
+    }
+
+    const registration = await navigator.serviceWorker.register('/sw.js');
+    let subscription = await registration.pushManager.getSubscription();
+
+    if (!subscription) {
+      subscription = await registration.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(pushConfig.vapidPublicKey),
+      });
+    }
+
+    const serializedSubscription = subscription.toJSON ? subscription.toJSON() : subscription;
+    await apiFetch('/api/push/web-subscriptions', {
+      method: 'POST',
+      body: JSON.stringify({ subscription: serializedSubscription }),
+    });
+
+    return true;
+  }
+
   async function runSearch(query) {
     const trimmed = query.trim();
 
@@ -737,6 +801,10 @@ function App() {
 
   useEffect(() => {
     if (!isNative) {
+      if ('Notification' in window) {
+        const permission = Notification.permission;
+        setPushPermission(permission === 'default' ? 'prompt' : permission);
+      }
       return undefined;
     }
 
@@ -762,6 +830,26 @@ function App() {
       registrationErrorHandle?.remove();
     };
   }, [isNative]);
+
+  useEffect(() => {
+    if (!isNative || !user?.id || !pushToken) {
+      return;
+    }
+
+    syncNativePushToken(pushToken).catch(() => {
+      setFeedError('Could not register this iPhone for Prism notifications.');
+    });
+  }, [isNative, pushToken, user?.id]);
+
+  useEffect(() => {
+    if (isNative || !user?.id || !('Notification' in window) || Notification.permission !== 'granted') {
+      return;
+    }
+
+    syncWebPushSubscription().catch(() => {
+      // Keep the web app usable even if browser push registration fails.
+    });
+  }, [isNative, user?.id]);
 
   useEffect(() => {
     if (!imageFile) {
@@ -1966,22 +2054,41 @@ function App() {
     try {
       await impact(ImpactStyle.Light);
 
-      if (!isNative) {
-        setFeedError('Push notifications only work in the iPhone app.');
+      if (isNative) {
+        const pushConfig = await apiFetch('/api/push/config');
+        const permission = await PushNotifications.requestPermissions();
+        setPushPermission(permission.receive);
+
+        if (permission.receive === 'granted') {
+          await PushNotifications.register();
+          setFeedError(
+            pushConfig.nativePushEnabled
+              ? ''
+              : 'This iPhone is registered, but the server still needs APNs credentials before live pushes will arrive.',
+          );
+        } else {
+          setFeedError('Notifications are not available until permission is granted.');
+        }
+
         return;
       }
 
-      const permission = await PushNotifications.requestPermissions();
-      setPushPermission(permission.receive);
+      if (!('Notification' in window)) {
+        setFeedError('This browser does not support notifications.');
+        return;
+      }
 
-      if (permission.receive === 'granted') {
-        await PushNotifications.register();
+      const permission = await Notification.requestPermission();
+      setPushPermission(permission === 'default' ? 'prompt' : permission);
+
+      if (permission === 'granted') {
+        await syncWebPushSubscription();
         setFeedError('');
       } else {
         setFeedError('Notifications are not available until permission is granted.');
       }
-    } catch {
-      setFeedError('Notifications are unavailable in this simulator session.');
+    } catch (error) {
+      setFeedError(error.message || 'Notifications are unavailable right now.');
     }
   }
 
@@ -2966,9 +3073,14 @@ function App() {
 
             <div className="section-heading">
               <h3>Notifications</h3>
-              <button className="ghost-button" onClick={markActivityRead}>
-                Mark Read
-              </button>
+              <div className="post-owner-actions">
+                <button className="ghost-button" onClick={enablePushNotifications}>
+                  {pushPermission === 'granted' ? 'Push On' : 'Enable Push'}
+                </button>
+                <button className="ghost-button" onClick={markActivityRead}>
+                  Mark Read
+                </button>
+              </div>
             </div>
 
             {activity.length === 0 && (

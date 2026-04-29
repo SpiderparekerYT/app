@@ -1,10 +1,12 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
+import http2 from 'node:http2';
 import path from 'node:path';
 import express from 'express';
 import multer from 'multer';
 import bcrypt from 'bcryptjs';
 import cookieParser from 'cookie-parser';
+import webpush from 'web-push';
 import {
   addComment,
   createStory,
@@ -19,13 +21,19 @@ import {
   getConversationMessages,
   getFeed,
   getActiveStories,
+  getPendingPushJobs,
   getStoryViewers,
   getInboxNotes,
   listPeople,
+  listDevicePushTokens,
+  listWebPushSubscriptions,
   getMessages,
   getOrCreateConversation,
   getProfile,
+  getUserById,
   hideConversation,
+  markPushJobDelivered,
+  markPushJobError,
   markStoriesViewed,
   getSnapThread,
   getSnapThreads,
@@ -37,6 +45,10 @@ import {
   markConversationRead,
   openSnap,
   replaySnap,
+  removeDevicePushToken,
+  removeWebPushSubscription,
+  saveDevicePushToken,
+  saveWebPushSubscription,
   searchAll,
   saveSnapInChat,
   setConversationMuted,
@@ -58,6 +70,13 @@ const uploadsDir = process.env.UPLOADS_DIR
 const distDir = path.resolve('dist');
 const spotifyClientId = process.env.SPOTIFY_CLIENT_ID || '';
 const appOrigin = process.env.APP_ORIGIN || `http://localhost:${port}`;
+const pushContactEmail = process.env.PUSH_CONTACT_EMAIL || 'support@prism.local';
+const vapidPublicKey = process.env.VAPID_PUBLIC_KEY || '';
+const vapidPrivateKey = process.env.VAPID_PRIVATE_KEY || '';
+const apnsTeamId = process.env.APNS_TEAM_ID || '';
+const apnsKeyId = process.env.APNS_KEY_ID || '';
+const apnsBundleId = process.env.APNS_BUNDLE_ID || 'com.prism.social';
+const apnsPrivateKey = (process.env.APNS_PRIVATE_KEY || '').replace(/\\n/g, '\n');
 const spotifyRedirectUri = `${appOrigin}/api/spotify/callback`;
 const spotifyScopes = ['user-read-email', 'user-read-private'].join(' ');
 const secureCookies = appOrigin.startsWith('https://');
@@ -70,6 +89,10 @@ const allowedOrigins = new Set([
   'http://localhost:3000',
   'http://127.0.0.1:3000',
 ]);
+
+if (vapidPublicKey && vapidPrivateKey) {
+  webpush.setVapidDetails(`mailto:${pushContactEmail}`, vapidPublicKey, vapidPrivateKey);
+}
 
 fs.mkdirSync(uploadsDir, { recursive: true });
 app.set('trust proxy', 1);
@@ -143,6 +166,14 @@ function uploadDiskPath(publicPath) {
 
 function base64url(buffer) {
   return Buffer.from(buffer)
+    .toString('base64')
+    .replace(/=/g, '')
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_');
+}
+
+function base64urlFromString(input) {
+  return Buffer.from(input)
     .toString('base64')
     .replace(/=/g, '')
     .replace(/\+/g, '-')
@@ -304,6 +335,181 @@ function normalizeMessage(message) {
     createdAt: message.createdAt,
     senderId: Number(message.senderId),
   };
+}
+
+function buildPushCopy(type, actorName, text) {
+  if (type === 'snap') {
+    return { title: actorName, body: 'Sent you a snap' };
+  }
+
+  if (type === 'follow') {
+    return { title: actorName, body: 'Started following you' };
+  }
+
+  if (type === 'comment') {
+    return { title: actorName, body: text ? `Commented: ${text}` : 'Commented on your post' };
+  }
+
+  if (type === 'message') {
+    return { title: actorName, body: text || 'Sent you a message' };
+  }
+
+  if (type === 'note') {
+    return { title: actorName, body: 'Liked your note' };
+  }
+
+  return { title: actorName, body: 'Liked your post' };
+}
+
+let cachedApnsJwt = '';
+let cachedApnsJwtExpiresAt = 0;
+
+function getApnsJwt() {
+  if (!apnsTeamId || !apnsKeyId || !apnsPrivateKey) {
+    return '';
+  }
+
+  if (cachedApnsJwt && cachedApnsJwtExpiresAt > Date.now() + 60_000) {
+    return cachedApnsJwt;
+  }
+
+  const header = base64urlFromString(JSON.stringify({ alg: 'ES256', kid: apnsKeyId }));
+  const payload = base64urlFromString(JSON.stringify({
+    iss: apnsTeamId,
+    iat: Math.floor(Date.now() / 1000),
+  }));
+  const unsignedToken = `${header}.${payload}`;
+  const signer = crypto.createSign('sha256');
+  signer.update(unsignedToken);
+  signer.end();
+  const signature = signer.sign(apnsPrivateKey);
+  cachedApnsJwt = `${unsignedToken}.${base64url(signature)}`;
+  cachedApnsJwtExpiresAt = Date.now() + 50 * 60_000;
+  return cachedApnsJwt;
+}
+
+async function sendApnsNotification(token, payload) {
+  const jwt = getApnsJwt();
+
+  if (!jwt) {
+    throw new Error('APNs is not configured on the server.');
+  }
+
+  await new Promise((resolve, reject) => {
+    const client = http2.connect('https://api.push.apple.com');
+    client.on('error', reject);
+
+    const request = client.request({
+      ':method': 'POST',
+      ':path': `/3/device/${token}`,
+      authorization: `bearer ${jwt}`,
+      'apns-topic': apnsBundleId,
+      'apns-push-type': 'alert',
+      'content-type': 'application/json',
+    });
+
+    let responseData = '';
+    request.setEncoding('utf8');
+    request.on('response', (headers) => {
+      const status = Number(headers[':status'] || 0);
+      request.on('data', (chunk) => {
+        responseData += chunk;
+      });
+      request.on('end', () => {
+        client.close();
+        if (status >= 200 && status < 300) {
+          resolve(true);
+          return;
+        }
+
+        const error = new Error(responseData || `APNs request failed with status ${status}`);
+        error.statusCode = status;
+        reject(error);
+      });
+    });
+    request.on('error', (error) => {
+      client.close();
+      reject(error);
+    });
+    request.end(JSON.stringify(payload));
+  });
+
+  return true;
+}
+
+async function processPushQueue() {
+  const jobs = getPendingPushJobs(25);
+
+  for (const job of jobs) {
+    try {
+      const actor = getUserById(job.actorId);
+      const actorName = actor?.name || 'Prism';
+      const copy = buildPushCopy(job.type, actorName, job.text);
+      const payload = {
+        title: copy.title,
+        body: copy.body,
+        type: job.type,
+        entityId: job.entityId,
+        createdAt: job.createdAt,
+      };
+
+      const webSubscriptions = listWebPushSubscriptions(job.userId);
+      const deviceTokens = listDevicePushTokens(job.userId);
+
+      const webResults = await Promise.allSettled(
+        webSubscriptions.map(async (subscription) => {
+          try {
+            await webpush.sendNotification(subscription, JSON.stringify(payload));
+          } catch (error) {
+            if (error?.statusCode === 404 || error?.statusCode === 410) {
+              removeWebPushSubscription(subscription.endpoint);
+            }
+            throw error;
+          }
+        }),
+      );
+
+      const deviceResults = await Promise.allSettled(
+        deviceTokens.map(async (device) => {
+          if (device.platform !== 'ios') {
+            return;
+          }
+
+          try {
+            await sendApnsNotification(device.token, {
+              aps: {
+                alert: {
+                  title: payload.title,
+                  body: payload.body,
+                },
+                sound: 'default',
+                badge: 1,
+              },
+            });
+          } catch (error) {
+            const message = `${error?.message || ''}`;
+            if (message.includes('BadDeviceToken') || message.includes('Unregistered')) {
+              removeDevicePushToken(device.token);
+            }
+            throw error;
+          }
+        }),
+      );
+
+      const destinationsCount = webSubscriptions.length + deviceTokens.length;
+      const allResults = [...webResults, ...deviceResults];
+      const successfulDeliveries = allResults.filter((result) => result.status === 'fulfilled').length;
+
+      if (destinationsCount > 0 && successfulDeliveries === 0) {
+        const failedResult = allResults.find((result) => result.status === 'rejected');
+        throw failedResult?.reason || new Error('Push delivery failed.');
+      }
+
+      markPushJobDelivered(job.id);
+    } catch (error) {
+      markPushJobError(job.id, error.message);
+    }
+  }
 }
 
 function getSessionIdFromRequest(req) {
@@ -515,6 +721,47 @@ app.post('/api/auth/logout', (req, res) => {
     secure: secureCookies,
   });
   res.json({ ok: true });
+});
+
+app.get('/api/push/config', requireAuth, (_req, res) => {
+  res.json({
+    webPushEnabled: Boolean(vapidPublicKey && vapidPrivateKey),
+    vapidPublicKey: vapidPublicKey || '',
+    nativePushEnabled: Boolean(apnsTeamId && apnsKeyId && apnsPrivateKey),
+  });
+});
+
+app.post('/api/push/web-subscriptions', requireAuth, (req, res) => {
+  const saved = saveWebPushSubscription(req.user.id, req.body.subscription);
+
+  if (!saved) {
+    return res.status(400).json({ error: 'Invalid subscription.' });
+  }
+
+  return res.json({ ok: true });
+});
+
+app.delete('/api/push/web-subscriptions', requireAuth, (req, res) => {
+  const endpoint = req.body?.endpoint?.trim();
+
+  if (!endpoint) {
+    return res.status(400).json({ error: 'Missing endpoint.' });
+  }
+
+  removeWebPushSubscription(endpoint);
+  return res.json({ ok: true });
+});
+
+app.post('/api/push/device-token', requireAuth, (req, res) => {
+  const token = req.body?.token?.trim();
+  const platform = req.body?.platform?.trim() || 'ios';
+
+  if (!token) {
+    return res.status(400).json({ error: 'Missing device token.' });
+  }
+
+  saveDevicePushToken(req.user.id, token, platform);
+  return res.json({ ok: true });
 });
 
 app.get('/api/feed', requireAuth, (req, res) => {
@@ -978,6 +1225,12 @@ if (fs.existsSync(distDir)) {
     res.sendFile(path.join(distDir, 'index.html'));
   });
 }
+
+processPushQueue().catch(() => {});
+const pushQueueInterval = setInterval(() => {
+  processPushQueue().catch(() => {});
+}, 15000);
+pushQueueInterval.unref?.();
 
 app.listen(port, () => {
   console.log(`Prism API running on http://127.0.0.1:${port}`);
